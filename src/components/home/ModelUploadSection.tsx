@@ -1,13 +1,14 @@
 import { useState, useCallback, useRef, Suspense, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Stage, Center } from "@react-three/drei";
-import { Upload, FileUp, X, Box, RotateCcw, ZoomIn, Minus, Plus, ChevronRight, Tag, Check, Percent } from "lucide-react";
+import { Upload, FileUp, X, Box, RotateCcw, ZoomIn, Minus, Plus, ChevronRight, Tag, Check, Percent, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { MATERIALS, QUALITY_PRESETS } from "@/lib/constants";
@@ -91,6 +92,7 @@ export function ModelUploadSection() {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadedModels, setUploadedModels] = useState<UploadedModel[]>([]);
   const [activeModel, setActiveModel] = useState<number>(0);
+  const [expandedModels, setExpandedModels] = useState<Set<number>>(new Set([0]));
   const [isLoading, setIsLoading] = useState(false);
   const [availableColors, setAvailableColors] = useState<AvailableColor[]>([]);
   const [userCoupons, setUserCoupons] = useState<UserCoupon[]>([]);
@@ -135,7 +137,6 @@ export function ModelUploadSection() {
         .eq("is_used", false);
       
       if (data) {
-        // Filter out expired coupons and transform data
         const validCoupons = data
           .filter((uc: any) => {
             if (!uc.coupon) return false;
@@ -155,6 +156,18 @@ export function ModelUploadSection() {
   }, [user]);
 
   const selectedCoupon = userCoupons.find(uc => uc.id === selectedCouponId);
+
+  const toggleModelExpanded = (index: number) => {
+    setExpandedModels(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
+  };
 
   const parseSTL = useCallback((arrayBuffer: ArrayBuffer): THREE.BufferGeometry => {
     const geometry = new THREE.BufferGeometry();
@@ -215,13 +228,17 @@ export function ModelUploadSection() {
       const geometry = parseSTL(arrayBuffer);
       const defaultColor = availableColors.length > 0 ? availableColors[0].hex_value : "#FFFFFF";
       
+      const newIndex = uploadedModels.length;
       setUploadedModels(prev => [...prev, {
         file,
         geometry,
         name: file.name,
         config: { ...defaultConfig, color: defaultColor }
       }]);
-      setActiveModel(uploadedModels.length);
+      setActiveModel(newIndex);
+      
+      // Collapse all except the new one
+      setExpandedModels(new Set([newIndex]));
     } catch (error) {
       console.error("Error parsing model:", error);
     } finally {
@@ -253,6 +270,14 @@ export function ModelUploadSection() {
 
   const removeModel = (index: number) => {
     setUploadedModels(prev => prev.filter((_, i) => i !== index));
+    setExpandedModels(prev => {
+      const newSet = new Set<number>();
+      prev.forEach(i => {
+        if (i < index) newSet.add(i);
+        else if (i > index) newSet.add(i - 1);
+      });
+      return newSet;
+    });
     if (activeModel >= index && activeModel > 0) {
       setActiveModel(activeModel - 1);
     }
@@ -460,160 +485,182 @@ export function ModelUploadSection() {
               <CardHeader className="pb-2 sticky top-0 bg-card z-10 border-b">
                 <CardTitle className="font-display text-xl">Order Configuration</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4 pt-4">
+              <CardContent className="space-y-3 pt-4">
                 {uploadedModels.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <Box className="w-12 h-12 mx-auto mb-4 opacity-30" />
                     <p>Upload 3D models to configure your order</p>
                   </div>
                 ) : (
-                  uploadedModels.map((model, index) => (
-                    <Card key={index} className={`border ${activeModel === index ? 'border-primary/50 bg-primary/5' : ''}`}>
-                      <CardContent className="p-4 space-y-4">
-                        {/* Model Header */}
-                        <div 
-                          className="flex items-center gap-3 cursor-pointer"
-                          onClick={() => setActiveModel(index)}
-                        >
-                          <div 
-                            className="w-8 h-8 rounded-lg flex items-center justify-center"
-                            style={{ backgroundColor: model.config.color }}
-                          >
-                            <Box className="w-4 h-4 text-white mix-blend-difference" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm truncate">{model.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {(model.file.size / 1024 / 1024).toFixed(2)} MB
-                            </p>
-                          </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeModel(index);
-                            }}
-                            className="p-1.5 hover:bg-destructive/20 rounded text-muted-foreground hover:text-destructive"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-
-                        {/* Color Selection */}
-                        <div className="space-y-2">
-                          <Label className="text-xs">Color</Label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {colorsToUse.map((color) => (
-                              <button
-                                key={color.id}
-                                onClick={() => updateModelConfig(index, "color", color.hex_value)}
-                                className={`w-7 h-7 rounded-full border-2 transition-all ${
-                                  model.config.color === color.hex_value
-                                    ? "border-primary scale-110 shadow-md"
-                                    : "border-border hover:border-primary/50"
-                                }`}
-                                style={{ backgroundColor: color.hex_value }}
-                                title={color.name}
-                              />
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Material & Quality Row */}
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <Label className="text-xs">Material</Label>
-                            <Select
-                              value={model.config.material}
-                              onValueChange={(v) => updateModelConfig(index, "material", v)}
+                  uploadedModels.map((model, index) => {
+                    const isExpanded = expandedModels.has(index);
+                    const material = MATERIALS[model.config.material as keyof typeof MATERIALS];
+                    const quality = QUALITY_PRESETS[model.config.quality as keyof typeof QUALITY_PRESETS];
+                    
+                    return (
+                      <Collapsible key={index} open={isExpanded} onOpenChange={() => toggleModelExpanded(index)}>
+                        <Card className={`border ${activeModel === index ? 'border-primary/50' : ''}`}>
+                          <CollapsibleTrigger asChild>
+                            <div 
+                              className={`p-3 cursor-pointer hover:bg-muted/50 transition-colors ${isExpanded ? 'border-b' : ''}`}
+                              onClick={() => setActiveModel(index)}
                             >
-                              <SelectTrigger className="h-9 text-xs bg-background">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent className="bg-popover z-50">
-                                {Object.entries(MATERIALS).map(([key, mat]) => (
-                                  <SelectItem key={key} value={key} className="text-xs">
-                                    {mat.name} {mat.surcharge > 0 && `(+${mat.surcharge}%)`}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">Quality</Label>
-                            <Select
-                              value={model.config.quality}
-                              onValueChange={(v) => updateModelConfig(index, "quality", v)}
-                            >
-                              <SelectTrigger className="h-9 text-xs bg-background">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent className="bg-popover z-50">
-                                {Object.entries(QUALITY_PRESETS).map(([key, preset]) => (
-                                  <SelectItem key={key} value={key} className="text-xs">
-                                    {preset.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
+                              <div className="flex items-center gap-3">
+                                <div 
+                                  className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                                  style={{ backgroundColor: model.config.color }}
+                                >
+                                  <Box className="w-4 h-4 text-white mix-blend-difference" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium text-sm truncate">{model.name}</p>
+                                  {!isExpanded && (
+                                    <p className="text-xs text-muted-foreground">
+                                      {material?.name} • {quality?.name} • {model.config.infill}% • ×{model.config.quantity}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      removeModel(index);
+                                    }}
+                                    className="p-1.5 hover:bg-destructive/20 rounded text-muted-foreground hover:text-destructive"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                  {isExpanded ? (
+                                    <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                                  ) : (
+                                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </CollapsibleTrigger>
+                          
+                          <CollapsibleContent>
+                            <CardContent className="p-4 pt-3 space-y-4">
+                              {/* Color Selection */}
+                              <div className="space-y-2">
+                                <Label className="text-xs">Color</Label>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {colorsToUse.map((color) => (
+                                    <button
+                                      key={color.id}
+                                      onClick={() => updateModelConfig(index, "color", color.hex_value)}
+                                      className={`w-7 h-7 rounded-full border-2 transition-all ${
+                                        model.config.color === color.hex_value
+                                          ? "border-primary scale-110 shadow-md"
+                                          : "border-border hover:border-primary/50"
+                                      }`}
+                                      style={{ backgroundColor: color.hex_value }}
+                                      title={color.name}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
 
-                        {/* Infill */}
-                        <div className="space-y-1">
-                          <div className="flex justify-between">
-                            <Label className="text-xs">Infill</Label>
-                            <span className="text-xs text-muted-foreground">{model.config.infill}%</span>
-                          </div>
-                          <Slider
-                            value={[model.config.infill]}
-                            onValueChange={([v]) => updateModelConfig(index, "infill", v)}
-                            min={10}
-                            max={100}
-                            step={5}
-                            className="py-1"
-                          />
-                        </div>
+                              {/* Material & Quality Row */}
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Material</Label>
+                                  <Select
+                                    value={model.config.material}
+                                    onValueChange={(v) => updateModelConfig(index, "material", v)}
+                                  >
+                                    <SelectTrigger className="h-9 text-xs bg-background">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-popover z-50">
+                                      {Object.entries(MATERIALS).map(([key, mat]) => (
+                                        <SelectItem key={key} value={key} className="text-xs">
+                                          {mat.name} {mat.surcharge > 0 && `(+${mat.surcharge}%)`}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Quality</Label>
+                                  <Select
+                                    value={model.config.quality}
+                                    onValueChange={(v) => updateModelConfig(index, "quality", v)}
+                                  >
+                                    <SelectTrigger className="h-9 text-xs bg-background">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-popover z-50">
+                                      {Object.entries(QUALITY_PRESETS).map(([key, preset]) => (
+                                        <SelectItem key={key} value={key} className="text-xs">
+                                          {preset.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
 
-                        {/* Quantity */}
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs">Quantity</Label>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => updateModelConfig(index, "quantity", Math.max(1, model.config.quantity - 1))}
-                            >
-                              <Minus className="w-3 h-3" />
-                            </Button>
-                            <span className="w-8 text-center font-semibold">
-                              {model.config.quantity}
-                            </span>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => updateModelConfig(index, "quantity", model.config.quantity + 1)}
-                            >
-                              <Plus className="w-3 h-3" />
-                            </Button>
-                          </div>
-                        </div>
+                              {/* Infill */}
+                              <div className="space-y-1">
+                                <div className="flex justify-between">
+                                  <Label className="text-xs">Infill</Label>
+                                  <span className="text-xs text-muted-foreground">{model.config.infill}%</span>
+                                </div>
+                                <Slider
+                                  value={[model.config.infill]}
+                                  onValueChange={([v]) => updateModelConfig(index, "infill", v)}
+                                  min={10}
+                                  max={100}
+                                  step={5}
+                                  className="py-1"
+                                />
+                              </div>
 
-                        {/* Notes */}
-                        <div className="space-y-1">
-                          <Label className="text-xs">Notes (Optional)</Label>
-                          <Textarea
-                            placeholder="Special instructions..."
-                            value={model.config.notes}
-                            onChange={(e) => updateModelConfig(index, "notes", e.target.value)}
-                            rows={2}
-                            className="text-xs bg-background resize-none"
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
+                              {/* Quantity */}
+                              <div className="flex items-center justify-between">
+                                <Label className="text-xs">Quantity</Label>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => updateModelConfig(index, "quantity", Math.max(1, model.config.quantity - 1))}
+                                  >
+                                    <Minus className="w-3 h-3" />
+                                  </Button>
+                                  <span className="w-8 text-center font-semibold">
+                                    {model.config.quantity}
+                                  </span>
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => updateModelConfig(index, "quantity", model.config.quantity + 1)}
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              </div>
+
+                              {/* Notes */}
+                              <div className="space-y-1">
+                                <Label className="text-xs">Notes (Optional)</Label>
+                                <Textarea
+                                  placeholder="Special instructions..."
+                                  value={model.config.notes}
+                                  onChange={(e) => updateModelConfig(index, "notes", e.target.value)}
+                                  rows={2}
+                                  className="text-xs bg-background resize-none"
+                                />
+                              </div>
+                            </CardContent>
+                          </CollapsibleContent>
+                        </Card>
+                      </Collapsible>
+                    );
+                  })
                 )}
               </CardContent>
             </Card>
@@ -625,7 +672,7 @@ export function ModelUploadSection() {
               onClick={handleSubmitOrder}
               className="w-full bg-primary-gradient shadow-glow text-lg h-14"
             >
-              {user ? "Submit Order" : "Register to Order"}
+              {user ? "Proceed to Checkout" : "Register to Order"}
               <ChevronRight className="w-5 h-5 ml-2" />
             </Button>
           </div>
