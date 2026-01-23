@@ -25,6 +25,18 @@ export const INFILL_PRESETS = [
   { value: 100, label: "100% - Solid" },
 ] as const;
 
+export const QUALITY_PRESETS = {
+  draft: { name: "Draft", description: "0.3mm layer height - Fast", pricePerGram: 5 },
+  normal: { name: "Normal", description: "0.2mm layer height - Balanced", pricePerGram: 8 },
+  high: { name: "High", description: "0.1mm layer height - Detailed", pricePerGram: 12 },
+} as const;
+
+export const MATERIALS = {
+  pla: { name: "PLA", description: "Easy to print, eco-friendly", surcharge: 0 },
+  petg: { name: "PETG", description: "Strong, heat resistant", surcharge: 15 },
+  abs: { name: "ABS", description: "Durable, impact resistant", surcharge: 20 },
+} as const;
+
 export const PRINT_QUALITIES = [
   { value: "draft", label: "Draft", description: "0.3mm layer height - Fast" },
   { value: "normal", label: "Normal", description: "0.2mm layer height - Balanced" },
