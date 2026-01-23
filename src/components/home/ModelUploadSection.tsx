@@ -364,10 +364,10 @@ export function ModelUploadSection() {
           </Card>
         )}
 
-        <div className="grid lg:grid-cols-5 gap-8 items-start max-w-7xl mx-auto">
+        <div className="grid lg:grid-cols-5 gap-8 items-stretch max-w-7xl mx-auto">
           {/* Left Side - Drag & Drop + 3D Viewer (takes 3 columns) */}
-          <div className="lg:col-span-3 flex flex-col gap-4">
-            <div className="text-center lg:text-left">
+          <div className="lg:col-span-3 flex flex-col">
+            <div className="text-center lg:text-left mb-4">
               <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">
                 Upload Your <span className="text-gradient">3D Model</span>
               </h1>
@@ -376,11 +376,11 @@ export function ModelUploadSection() {
               </p>
             </div>
 
-            <Card className="overflow-hidden border-2 border-dashed border-border hover:border-primary/50 transition-colors">
+            <Card className="flex-1 overflow-hidden border-2 border-dashed border-border hover:border-primary/50 transition-colors">
               <CardContent className="p-0">
                 {uploadedModels.length === 0 ? (
                   <div
-                    className={`relative min-h-[450px] flex flex-col items-center justify-center p-8 transition-all duration-300 ${
+                    className={`relative h-full min-h-[350px] flex flex-col items-center justify-center p-8 transition-all duration-300 ${
                       isDragging ? "bg-primary/10 border-primary" : "bg-secondary/30"
                     }`}
                     onDrop={handleDrop}
@@ -420,7 +420,7 @@ export function ModelUploadSection() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="min-h-[450px] flex flex-col">
+                  <div className="h-full min-h-[350px] flex flex-col">
                     {/* 3D Viewer */}
                     <div className="relative flex-1 bg-gradient-to-br from-slate-900 to-slate-800">
                       {currentModel?.geometry && (
@@ -490,14 +490,15 @@ export function ModelUploadSection() {
           </div>
 
           {/* Right Side - Order Configuration (takes 2 columns) */}
-          <div className="lg:col-span-2 flex flex-col gap-4">
-            <Card className="overflow-auto max-h-[calc(100vh-180px)]">
-              <CardHeader className="pb-2 sticky top-0 bg-card z-10 border-b">
+          <div className="lg:col-span-2 flex flex-col">
+            <div className="h-[76px]"></div> {/* Spacer to align with left side title */}
+            <Card className="flex-1 flex flex-col">
+              <CardHeader className="pb-2 border-b">
                 <CardTitle className="font-display text-xl">Order Configuration</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 pt-4">
+              <CardContent className="flex-1 flex flex-col justify-center space-y-3 pt-4">
                 {uploadedModels.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
+                  <div className="text-center py-8 text-muted-foreground">
                     <Box className="w-12 h-12 mx-auto mb-4 opacity-30" />
                     <p>Upload 3D models to configure your order</p>
                   </div>
