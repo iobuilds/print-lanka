@@ -538,13 +538,33 @@ export default function Dashboard() {
                                     ))}
                                   </div>
                                   {order.total_price && (
-                                    <div className="flex justify-between items-center pt-2 border-t">
-                                      <span className="text-sm text-muted-foreground">
-                                        Delivery: {formatPrice(order.delivery_charge || 0)}
-                                      </span>
-                                      <span className="font-bold">
-                                        Total: {formatPrice(order.total_price)}
-                                      </span>
+                                    <div className="pt-2 border-t space-y-2">
+                                      <div className="flex justify-between items-center text-sm">
+                                        <span className="text-muted-foreground">Subtotal</span>
+                                        <span>{formatPrice(order.total_price - (order.delivery_charge || 0))}</span>
+                                      </div>
+                                      <div className="flex justify-between items-center text-sm">
+                                        <span className="text-muted-foreground">Delivery</span>
+                                        <span>{formatPrice(order.delivery_charge || 0)}</span>
+                                      </div>
+                                      {/* Show coupon discount if applied */}
+                                      {order.notes?.includes("Coupon:") && (
+                                        <div className="flex justify-between items-center text-sm text-success">
+                                          <span className="flex items-center gap-1">
+                                            <Percent className="w-3 h-3" />
+                                            Coupon Applied
+                                          </span>
+                                          <span>
+                                            {order.notes.match(/Coupon: (\w+)/)?.[1] || "Applied"}
+                                          </span>
+                                        </div>
+                                      )}
+                                      <div className="flex justify-between items-center pt-2 border-t">
+                                        <span className="font-bold">Total</span>
+                                        <span className="font-bold text-lg">
+                                          {formatPrice(order.total_price)}
+                                        </span>
+                                      </div>
                                     </div>
                                   )}
                                 </div>
