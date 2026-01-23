@@ -1,6 +1,8 @@
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,13 +12,45 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Box, User, LogOut, LayoutDashboard, Settings, Menu, X } from "lucide-react";
-import { useState } from "react";
+import { Box, User, LogOut, LayoutDashboard, Settings, Menu, X, Tag } from "lucide-react";
+import { useState, useEffect } from "react";
 
 export function Navbar() {
   const { user, profile, isAdminOrModerator, signOut } = useAuth();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [availableCouponsCount, setAvailableCouponsCount] = useState(0);
+
+  // Fetch available coupons count
+  useEffect(() => {
+    const fetchCouponsCount = async () => {
+      const { count, error } = await supabase
+        .from("coupons")
+        .select("*", { count: "exact", head: true })
+        .eq("is_active", true)
+        .or("valid_until.is.null,valid_until.gt.now()");
+
+      if (!error && count) {
+        setAvailableCouponsCount(count);
+      }
+    };
+
+    fetchCouponsCount();
+
+    // Set up real-time subscription for coupons
+    const channel = supabase
+      .channel('navbar-coupons')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'coupons' },
+        () => fetchCouponsCount()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const handleSignOut = async () => {
     await signOut();
@@ -52,8 +86,13 @@ export function Navbar() {
             <Link to="/pricing" className="text-muted-foreground hover:text-foreground transition-colors">
               Pricing Guide
             </Link>
-            <Link to="/coupons" className="text-muted-foreground hover:text-foreground transition-colors">
+            <Link to="/coupons" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5">
               Coupons
+              {availableCouponsCount > 0 && (
+                <Badge variant="default" className="h-5 min-w-5 px-1.5 text-xs bg-primary">
+                  {availableCouponsCount}
+                </Badge>
+              )}
             </Link>
             {user && (
               <Link to="/dashboard" className="text-muted-foreground hover:text-foreground transition-colors">
@@ -161,10 +200,15 @@ export function Navbar() {
               </Link>
               <Link
                 to="/coupons"
-                className="text-muted-foreground hover:text-foreground transition-colors"
+                className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Coupons
+                {availableCouponsCount > 0 && (
+                  <Badge variant="default" className="h-5 min-w-5 px-1.5 text-xs bg-primary">
+                    {availableCouponsCount}
+                  </Badge>
+                )}
               </Link>
               {user ? (
                 <>

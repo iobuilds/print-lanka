@@ -103,7 +103,8 @@ export default function Coupons() {
         }
       } else {
         toast.success(`Coupon ${coupon.code} added to your wallet!`);
-        fetchCoupons();
+        // Redirect to dashboard coupons tab
+        navigate("/dashboard?tab=coupons");
       }
     } catch (error: any) {
       toast.error(error.message || "Failed to claim coupon");
