@@ -12,6 +12,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { MATERIALS, QUALITY_PRESETS } from "@/lib/constants";
+import { setOrderData } from "@/lib/orderStore";
 import { supabase } from "@/integrations/supabase/client";
 import * as THREE from "three";
 
@@ -299,10 +300,19 @@ export function ModelUploadSection() {
       discount_value: selectedCoupon.coupon.discount_value
     } : null;
 
+    // Store models in memory (File objects can't be serialized in navigation state)
+    const modelsForOrder = uploadedModels.map(m => ({
+      file: m.file,
+      name: m.name,
+      config: m.config
+    }));
+    
+    setOrderData({ models: modelsForOrder, coupon: couponData });
+
     if (user) {
-      navigate("/checkout", { state: { models: uploadedModels, coupon: couponData } });
+      navigate("/checkout");
     } else {
-      navigate("/register", { state: { models: uploadedModels, coupon: couponData } });
+      navigate("/register", { state: { redirectToCheckout: true } });
     }
   };
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Box, Loader2 } from "lucide-react";
+import { getOrderData } from "@/lib/orderStore";
 
 export default function Register() {
   const [formData, setFormData] = useState({
@@ -22,6 +23,8 @@ export default function Register() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectToCheckout = location.state?.redirectToCheckout || getOrderData() !== null;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -58,7 +61,7 @@ export default function Register() {
       if (error) throw error;
 
       toast.success("Account created! You can now sign in.");
-      navigate("/login");
+      navigate("/login", { state: { redirectToCheckout } });
     } catch (error: any) {
       toast.error(error.message || "Failed to create account");
     } finally {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,12 +8,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Box, Loader2 } from "lucide-react";
+import { getOrderData } from "@/lib/orderStore";
 
 export default function Login() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectToCheckout = location.state?.redirectToCheckout || getOrderData() !== null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +34,7 @@ export default function Login() {
       if (error) throw error;
 
       toast.success("Welcome back!");
-      navigate("/orders");
+      navigate(redirectToCheckout ? "/checkout" : "/dashboard");
     } catch (error: any) {
       toast.error(error.message || "Failed to sign in");
     } finally {
