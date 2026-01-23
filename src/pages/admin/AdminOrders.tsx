@@ -307,19 +307,28 @@ export default function AdminOrders() {
       }
 
       const total = calculateTotal();
+      const isFirstPricing = pricingOrder.status === "pending_review";
+      
+      // Only change status and send notification if this is the first pricing
+      const updateData: any = {
+        total_price: total,
+        delivery_charge: deliveryCharge,
+      };
+
+      if (isFirstPricing) {
+        updateData.status = "priced_awaiting_payment";
+        updateData.priced_at = new Date().toISOString();
+      }
+
       const { error: orderError } = await supabase
         .from("orders")
-        .update({
-          total_price: total,
-          delivery_charge: deliveryCharge,
-          status: "priced_awaiting_payment",
-          priced_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq("id", pricingOrder.id);
 
       if (orderError) throw orderError;
 
-      if (pricingOrder.profile?.phone) {
+      // Only send SMS notification for first pricing
+      if (isFirstPricing && pricingOrder.profile?.phone) {
         try {
           await supabase.functions.invoke("send-sms", {
             body: {
@@ -335,7 +344,8 @@ export default function AdminOrders() {
       }
 
       setPricingOrder(null);
-      toast.success("Prices saved and customer notified");
+      fetchOrders();
+      toast.success(isFirstPricing ? "Prices saved and customer notified" : "Prices updated");
     } catch (error: any) {
       toast.error(error.message || "Failed to save prices");
     } finally {
