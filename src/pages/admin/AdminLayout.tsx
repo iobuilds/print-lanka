@@ -6,6 +6,8 @@ import {
   ChevronLeft, Loader2 
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -23,7 +25,8 @@ export default function AdminLayout() {
 
   useEffect(() => {
     if (!isLoading && (!user || !isAdminOrModerator)) {
-      navigate("/");
+      // Don't hard-redirect; render an access denied screen instead.
+      // (Keeps the user from experiencing a blank/white screen.)
     }
   }, [user, isAdminOrModerator, isLoading, navigate]);
 
@@ -35,8 +38,25 @@ export default function AdminLayout() {
     );
   }
 
-  if (!isAdminOrModerator) {
-    return null;
+  if (!user || !isAdminOrModerator) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <Card className="max-w-md w-full">
+          <CardHeader>
+            <CardTitle>Admin access required</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              You’re signed in, but this account doesn’t have admin/moderator permission.
+            </p>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => navigate("/")}>Back to Home</Button>
+              <Button onClick={() => navigate("/dashboard?tab=profile")}>View Profile</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
