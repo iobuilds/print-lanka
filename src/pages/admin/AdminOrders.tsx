@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { 
   Loader2, ChevronDown, ChevronUp, DollarSign, Send, FileImage, 
   Search, Download, Eye, RefreshCw, Bell, MapPin, Phone, Mail,
-  Package, Calendar, FileText
+  Package, Calendar, FileText, Calculator
 } from "lucide-react";
 import { formatPrice, ORDER_STATUSES } from "@/lib/constants";
 import { toast } from "sonner";
@@ -65,6 +65,22 @@ interface Order {
 
 const statusOptions = Object.keys(ORDER_STATUSES);
 
+interface PricingConfig {
+  quality_pricing: { draft: number; normal: number; high: number };
+  material_surcharge: { pla: number; petg: number; abs: number };
+  minimum_order: number;
+  custom_color_surcharge: number;
+  rush_order_multiplier: number;
+}
+
+const defaultPricingConfig: PricingConfig = {
+  quality_pricing: { draft: 15, normal: 20, high: 30 },
+  material_surcharge: { pla: 0, petg: 5, abs: 8 },
+  minimum_order: 500,
+  custom_color_surcharge: 200,
+  rush_order_multiplier: 1.5,
+};
+
 export default function AdminOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -79,9 +95,11 @@ export default function AdminOrders() {
   const [viewingSlipOrderId, setViewingSlipOrderId] = useState<string | null>(null);
   const [detailsOrder, setDetailsOrder] = useState<Order | null>(null);
   const [isDownloading, setIsDownloading] = useState<string | null>(null);
+  const [pricingConfig, setPricingConfig] = useState<PricingConfig>(defaultPricingConfig);
 
   useEffect(() => {
     fetchOrders();
+    fetchPricingConfig();
 
     // Set up real-time subscription
     const channel = supabase
@@ -131,6 +149,46 @@ export default function AdminOrders() {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  const fetchPricingConfig = async () => {
+    const { data, error } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "pricing_config")
+      .single();
+
+    if (!error && data?.value) {
+      setPricingConfig(data.value as unknown as PricingConfig);
+    }
+  };
+
+  // Calculate suggested price for an order item based on config
+  const calculateSuggestedPrice = (item: OrderItem): number => {
+    const qualityKey = item.quality as keyof typeof pricingConfig.quality_pricing;
+    const materialKey = item.material as keyof typeof pricingConfig.material_surcharge;
+    
+    const basePrice = pricingConfig.quality_pricing[qualityKey] || 20;
+    const materialSurcharge = pricingConfig.material_surcharge[materialKey] || 0;
+    
+    // Calculate based on infill and quantity
+    const infillMultiplier = 1 + (item.infill_percentage / 100);
+    const pricePerUnit = (basePrice + materialSurcharge) * infillMultiplier;
+    
+    return Math.round(pricePerUnit * item.quantity * 100); // LKR, assuming base is per gram and avg model is ~100g
+  };
+
+  // Auto-calculate all prices for an order
+  const autoCalculatePrices = () => {
+    if (!pricingOrder) return;
+    
+    const calculatedPrices: Record<string, number> = {};
+    pricingOrder.order_items.forEach(item => {
+      calculatedPrices[item.id] = calculateSuggestedPrice(item);
+    });
+    
+    setItemPrices(calculatedPrices);
+    toast.success("Prices calculated based on configuration");
+  };
 
   const fetchOrders = async () => {
     try {
@@ -734,35 +792,52 @@ export default function AdminOrders() {
           
           {pricingOrder && (
             <div className="space-y-4">
-              <div className="text-sm text-muted-foreground">
-                Order #{pricingOrder.id.slice(0, 8)} • {pricingOrder.profile?.first_name} {pricingOrder.profile?.last_name}
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-muted-foreground">
+                  Order #{pricingOrder.id.slice(0, 8)} • {pricingOrder.profile?.first_name} {pricingOrder.profile?.last_name}
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={autoCalculatePrices}
+                  className="gap-2"
+                >
+                  <Calculator className="w-4 h-4" />
+                  Auto-Calculate
+                </Button>
               </div>
 
               <div className="space-y-3">
-                {pricingOrder.order_items.map((item) => (
-                  <div key={item.id} className="flex items-center gap-4 p-3 border rounded-lg">
-                    <div
-                      className="w-6 h-6 rounded-full border flex-shrink-0"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{item.file_name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {item.material.toUpperCase()} • {item.quality} • {item.infill_percentage}% • ×{item.quantity}
-                      </p>
-                    </div>
-                    <div className="w-32">
-                      <Input
-                        type="number"
-                        placeholder="Price (LKR)"
-                        value={itemPrices[item.id] || ""}
-                        onChange={(e) => 
-                          setItemPrices({ ...itemPrices, [item.id]: Number(e.target.value) })
-                        }
+                {pricingOrder.order_items.map((item) => {
+                  const suggestedPrice = calculateSuggestedPrice(item);
+                  return (
+                    <div key={item.id} className="flex items-center gap-4 p-3 border rounded-lg">
+                      <div
+                        className="w-6 h-6 rounded-full border flex-shrink-0"
+                        style={{ backgroundColor: item.color }}
                       />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{item.file_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.material.toUpperCase()} • {item.quality} • {item.infill_percentage}% • ×{item.quantity}
+                        </p>
+                        <p className="text-xs text-primary mt-1">
+                          Suggested: {formatPrice(suggestedPrice)}
+                        </p>
+                      </div>
+                      <div className="w-32">
+                        <Input
+                          type="number"
+                          placeholder="Price (LKR)"
+                          value={itemPrices[item.id] || ""}
+                          onChange={(e) => 
+                            setItemPrices({ ...itemPrices, [item.id]: Number(e.target.value) })
+                          }
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="flex items-center gap-4 p-3 border rounded-lg bg-muted/50">

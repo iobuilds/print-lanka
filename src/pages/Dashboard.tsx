@@ -148,43 +148,88 @@ export default function Dashboard() {
     setIsLoadingOrders(false);
   };
 
+  const fetchCoupons = async () => {
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from("user_coupons")
+      .select(`
+        id,
+        is_used,
+        used_at,
+        assigned_at,
+        coupon:coupons (
+          code,
+          discount_type,
+          discount_value,
+          valid_until
+        )
+      `)
+      .eq("user_id", user.id)
+      .order("assigned_at", { ascending: false });
+
+    if (!error && data) {
+      const mappedCoupons = data.map((uc: any) => ({
+        id: uc.id,
+        is_used: uc.is_used,
+        used_at: uc.used_at,
+        assigned_at: uc.assigned_at,
+        coupon: uc.coupon
+      }));
+      setCoupons(mappedCoupons);
+    }
+    setIsLoadingCoupons(false);
+  };
+
   useEffect(() => {
-    const fetchCoupons = async () => {
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from("user_coupons")
-        .select(`
-          id,
-          is_used,
-          used_at,
-          assigned_at,
-          coupon:coupons (
-            code,
-            discount_type,
-            discount_value,
-            valid_until
-          )
-        `)
-        .eq("user_id", user.id)
-        .order("assigned_at", { ascending: false });
-
-      if (!error && data) {
-        const mappedCoupons = data.map((uc: any) => ({
-          id: uc.id,
-          is_used: uc.is_used,
-          used_at: uc.used_at,
-          assigned_at: uc.assigned_at,
-          coupon: uc.coupon
-        }));
-        setCoupons(mappedCoupons);
-      }
-      setIsLoadingCoupons(false);
-    };
-
     if (user) {
       fetchOrders();
       fetchCoupons();
+
+      // Set up real-time subscriptions
+      const ordersChannel = supabase
+        .channel('user-orders')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'orders',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            console.log('Order update:', payload);
+            if (payload.eventType === 'UPDATE') {
+              const newStatus = (payload.new as any).status;
+              const statusInfo = ORDER_STATUSES[newStatus as keyof typeof ORDER_STATUSES];
+              if (statusInfo) {
+                toast.info(`Order status updated: ${statusInfo.label}`);
+              }
+            }
+            fetchOrders();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'user_coupons',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            console.log('Coupon update:', payload);
+            if (payload.eventType === 'INSERT') {
+              toast.success("New coupon added to your wallet!");
+            }
+            fetchCoupons();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(ordersChannel);
+      };
     }
   }, [user]);
 
