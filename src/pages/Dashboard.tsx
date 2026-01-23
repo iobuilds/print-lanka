@@ -14,10 +14,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { 
   User, Package, Tag, Clock, CheckCircle, XCircle, 
   Truck, Printer, CreditCard, Edit2, Save, Loader2,
-  Calendar, Percent, ChevronRight, Upload, FileImage, X, AlertCircle
+  Calendar, Percent, ChevronRight, Upload, FileImage, X, AlertCircle, Building2
 } from "lucide-react";
 import { formatPrice, ORDER_STATUSES } from "@/lib/constants";
 import { toast } from "sonner";
+import { BankDetailsDialog } from "@/components/BankDetailsDialog";
 
 interface OrderItem {
   id: string;
@@ -120,6 +121,7 @@ export default function Dashboard() {
   const [paymentSlipPreview, setPaymentSlipPreview] = useState<string | null>(null);
   const [isUploadingSlip, setIsUploadingSlip] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [showBankDetails, setShowBankDetails] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -571,6 +573,14 @@ export default function Dashboard() {
                                     </p>
                                   </div>
                                   <Button 
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setShowBankDetails(true)}
+                                  >
+                                    <Building2 className="w-4 h-4 mr-1" />
+                                    Bank Details
+                                  </Button>
+                                  <Button 
                                     size="sm" 
                                     onClick={() => setUploadingOrderId(order.id)}
                                   >
@@ -956,6 +966,8 @@ export default function Dashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      <BankDetailsDialog open={showBankDetails} onOpenChange={setShowBankDetails} />
     </Layout>
   );
 }

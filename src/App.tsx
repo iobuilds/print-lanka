@@ -11,6 +11,9 @@ import Pricing from "./pages/Pricing";
 import Coupons from "./pages/Coupons";
 import Dashboard from "./pages/Dashboard";
 import Checkout from "./pages/Checkout";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsConditions from "./pages/TermsConditions";
+import RefundPolicy from "./pages/RefundPolicy";
 import AdminLayout from "./pages/admin/AdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminOrders from "./pages/admin/AdminOrders";
@@ -18,6 +21,7 @@ import AdminCoupons from "./pages/admin/AdminCoupons";
 import AdminColors from "./pages/admin/AdminColors";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminSettings from "./pages/admin/AdminSettings";
+import AdminBankDetails from "./pages/admin/AdminBankDetails";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -37,6 +41,9 @@ const App = () => (
             <Route path="/coupons" element={<Coupons />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/checkout" element={<Checkout />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/terms-conditions" element={<TermsConditions />} />
+            <Route path="/refund-policy" element={<RefundPolicy />} />
             
             {/* Admin Routes */}
             <Route path="/admin" element={<AdminLayout />}>
@@ -46,6 +53,7 @@ const App = () => (
               <Route path="colors" element={<AdminColors />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="settings" element={<AdminSettings />} />
+              <Route path="bank-details" element={<AdminBankDetails />} />
             </Route>
             
             <Route path="*" element={<NotFound />} />

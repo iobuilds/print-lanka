@@ -64,13 +64,13 @@ export function Footer() {
 
         {/* Policy Links */}
         <div className="border-t border-white/10 mt-8 pt-6 flex justify-center gap-6 text-gray-400 text-sm">
-          <Link to="/privacy" className="hover:text-white transition-colors">
+          <Link to="/privacy-policy" className="hover:text-white transition-colors">
             Privacy Policy
           </Link>
-          <Link to="/terms" className="hover:text-white transition-colors">
+          <Link to="/terms-conditions" className="hover:text-white transition-colors">
             Terms & Conditions
           </Link>
-          <Link to="/refund" className="hover:text-white transition-colors">
+          <Link to="/refund-policy" className="hover:text-white transition-colors">
             Refund Policy
           </Link>
         </div>
