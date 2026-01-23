@@ -3,7 +3,7 @@ import { useNavigate, Outlet, Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
   LayoutDashboard, Tag, Palette, Package, Users, Settings, 
-  ChevronLeft, Loader2 
+  ChevronLeft, Loader2, Building2 
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,7 @@ const navItems = [
   { href: "/admin/coupons", label: "Coupons", icon: Tag },
   { href: "/admin/colors", label: "Colors", icon: Palette },
   { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/bank-details", label: "Bank Details", icon: Building2 },
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 

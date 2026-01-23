@@ -9,15 +9,17 @@ import { Separator } from "@/components/ui/separator";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { 
   Box, Upload, Loader2, CheckCircle, ChevronRight, 
-  Percent, AlertCircle, CalendarIcon, Tag, Check
+  Percent, AlertCircle, CalendarIcon, Tag, Check, Building2
 } from "lucide-react";
 import { formatPrice, MATERIALS, QUALITY_PRESETS } from "@/lib/constants";
 import { toast } from "sonner";
 import { format, addDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { getOrderData, clearOrderData } from "@/lib/orderStore";
+import { BankDetailsDialog } from "@/components/BankDetailsDialog";
 
 interface ModelConfig {
   material: string;
@@ -64,6 +66,9 @@ export default function Checkout() {
   );
   const [userCoupons, setUserCoupons] = useState<UserCoupon[]>([]);
   const [selectedCouponId, setSelectedCouponId] = useState<string | null>(null);
+  const [couponCode, setCouponCode] = useState("");
+  const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
+  const [showBankDetails, setShowBankDetails] = useState(false);
 
   // Get order data from memory store
   const orderData = getOrderData();
@@ -381,61 +386,163 @@ export default function Checkout() {
               </Card>
 
               {/* Coupon Selection */}
-              {userCoupons.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Tag className="w-5 h-5" />
-                      Apply Coupon
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <p className="text-sm text-muted-foreground">
-                        Select a coupon to apply to your order
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {userCoupons.map((uc) => (
-                          <button
-                            key={uc.id}
-                            onClick={() => setSelectedCouponId(selectedCouponId === uc.id ? null : uc.id)}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                              selectedCouponId === uc.id
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-secondary border-border hover:border-primary/50"
-                            }`}
-                          >
-                            {selectedCouponId === uc.id && <Check className="w-4 h-4" />}
-                            <Percent className="w-3 h-3" />
-                            <span className="font-medium text-sm">{uc.coupon.code}</span>
-                            <span className="text-xs opacity-80">
-                              {uc.coupon.discount_type === 'percentage' 
-                                ? `${uc.coupon.discount_value}% off` 
-                                : `LKR ${uc.coupon.discount_value} off`}
-                            </span>
-                          </button>
-                        ))}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Tag className="w-5 h-5" />
+                    Apply Coupon
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {/* Coupon code input */}
+                    <div className="space-y-2">
+                      <Label className="text-sm">Have a coupon code?</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Enter coupon code"
+                          value={couponCode}
+                          onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                          className="flex-1"
+                        />
+                        <Button
+                          variant="secondary"
+                          disabled={!couponCode.trim() || isApplyingCoupon}
+                          onClick={async () => {
+                            if (!user || !couponCode.trim()) return;
+                            setIsApplyingCoupon(true);
+                            try {
+                              // First check if coupon exists and is valid
+                              const { data: coupon, error: couponError } = await supabase
+                                .from("coupons")
+                                .select("*")
+                                .eq("code", couponCode.trim())
+                                .eq("is_active", true)
+                                .single();
+
+                              if (couponError || !coupon) {
+                                toast.error("Invalid or expired coupon code");
+                                return;
+                              }
+
+                              // Check if already claimed
+                              const { data: existingClaim } = await supabase
+                                .from("user_coupons")
+                                .select("id")
+                                .eq("user_id", user.id)
+                                .eq("coupon_id", coupon.id)
+                                .single();
+
+                              if (existingClaim) {
+                                toast.error("You have already claimed this coupon");
+                                return;
+                              }
+
+                              // Claim the coupon
+                              const { data: newUserCoupon, error: claimError } = await supabase
+                                .from("user_coupons")
+                                .insert({
+                                  user_id: user.id,
+                                  coupon_id: coupon.id,
+                                })
+                                .select()
+                                .single();
+
+                              if (claimError) {
+                                toast.error("Failed to apply coupon");
+                                return;
+                              }
+
+                              // Add to user coupons and select it
+                              const newCoupon: UserCoupon = {
+                                id: newUserCoupon.id,
+                                is_used: false,
+                                coupon: {
+                                  code: coupon.code,
+                                  discount_type: coupon.discount_type,
+                                  discount_value: coupon.discount_value,
+                                  valid_until: coupon.valid_until,
+                                }
+                              };
+                              setUserCoupons([...userCoupons, newCoupon]);
+                              setSelectedCouponId(newUserCoupon.id);
+                              setCouponCode("");
+                              toast.success("Coupon applied successfully!");
+                            } catch (error) {
+                              toast.error("Failed to apply coupon");
+                            } finally {
+                              setIsApplyingCoupon(false);
+                            }
+                          }}
+                        >
+                          {isApplyingCoupon ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            "Apply"
+                          )}
+                        </Button>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+
+                    {/* Available coupons from wallet */}
+                    {userCoupons.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">
+                          Or select from your wallet:
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {userCoupons.map((uc) => (
+                            <button
+                              key={uc.id}
+                              onClick={() => setSelectedCouponId(selectedCouponId === uc.id ? null : uc.id)}
+                              className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+                                selectedCouponId === uc.id
+                                  ? "bg-primary text-primary-foreground border-primary"
+                                  : "bg-secondary border-border hover:border-primary/50"
+                              }`}
+                            >
+                              {selectedCouponId === uc.id && <Check className="w-4 h-4" />}
+                              <Percent className="w-3 h-3" />
+                              <span className="font-medium text-sm">{uc.coupon.code}</span>
+                              <span className="text-xs opacity-80">
+                                {uc.coupon.discount_type === 'percentage' 
+                                  ? `${uc.coupon.discount_value}% off` 
+                                  : `LKR ${uc.coupon.discount_value} off`}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
 
               {/* Info about payment */}
               <Card>
                 <CardContent className="pt-6">
                   <div className="flex items-start gap-3 p-4 bg-muted rounded-lg">
                     <AlertCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                    <div>
+                    <div className="flex-1">
                       <p className="font-medium text-sm">Payment After Pricing</p>
                       <p className="text-sm text-muted-foreground mt-1">
                         Once we review and price your order, you'll receive an SMS notification. 
                         You can then upload your bank transfer slip from your dashboard.
                       </p>
                     </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowBankDetails(true)}
+                    >
+                      <Building2 className="w-4 h-4 mr-1" />
+                      View Bank Details
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
+              
+              <BankDetailsDialog open={showBankDetails} onOpenChange={setShowBankDetails} />
 
               {/* Delivery Info */}
               <Card>

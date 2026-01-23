@@ -23,6 +23,7 @@ interface Coupon {
   uses_per_user: number | null;
   current_uses: number;
   is_active: boolean;
+  is_public: boolean | null;
   valid_from: string;
   valid_until: string | null;
   created_at: string;
@@ -56,6 +57,7 @@ export default function AdminCoupons() {
     max_uses: "",
     uses_per_user: "1", // "1" = one-time per user, "unlimited" = unlimited per user
     valid_until: "",
+    is_public: true, // true = public (claimable by anyone), false = private (code-only or assign)
   });
 
   useEffect(() => {
@@ -104,6 +106,7 @@ export default function AdminCoupons() {
           ? null
           : parseInt(newCoupon.uses_per_user, 10) || 1,
         valid_until: newCoupon.valid_until || null,
+        is_public: newCoupon.is_public,
         created_by: user?.id,
       });
 
@@ -119,6 +122,7 @@ export default function AdminCoupons() {
         max_uses: "",
         uses_per_user: "1",
         valid_until: "",
+        is_public: true,
       });
       fetchCoupons();
     } catch (error: any) {
@@ -291,6 +295,21 @@ export default function AdminCoupons() {
                 />
               </div>
 
+              <div className="flex items-center justify-between p-3 border rounded-lg">
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium">Public Coupon</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {newCoupon.is_public 
+                      ? "Visible on coupons page - anyone can claim" 
+                      : "Hidden - only claimable via code or assignment"}
+                  </p>
+                </div>
+                <Switch
+                  checked={newCoupon.is_public}
+                  onCheckedChange={(v) => setNewCoupon({ ...newCoupon, is_public: v })}
+                />
+              </div>
+
               <Button onClick={handleCreateCoupon} disabled={isCreating} className="w-full">
                 {isCreating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Create Coupon
@@ -350,10 +369,11 @@ export default function AdminCoupons() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Code</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>Discount</TableHead>
                   <TableHead>Uses</TableHead>
                   <TableHead>Expires</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Active</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -361,6 +381,11 @@ export default function AdminCoupons() {
                 {coupons.map((coupon) => (
                   <TableRow key={coupon.id}>
                     <TableCell className="font-mono font-bold">{coupon.code}</TableCell>
+                    <TableCell>
+                      <Badge variant={coupon.is_public ? "default" : "secondary"}>
+                        {coupon.is_public ? "Public" : "Private"}
+                      </Badge>
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
                         {coupon.discount_type === "percentage" ? (
