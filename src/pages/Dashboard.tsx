@@ -10,13 +10,30 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { 
   User, Package, Tag, Clock, CheckCircle, XCircle, 
   Truck, Printer, CreditCard, Edit2, Save, Loader2,
-  Calendar, Percent, ChevronRight
+  Calendar, Percent, ChevronRight, Upload, FileImage, X, AlertCircle
 } from "lucide-react";
 import { formatPrice, ORDER_STATUSES } from "@/lib/constants";
 import { toast } from "sonner";
+
+interface OrderItem {
+  id: string;
+  file_name: string;
+  quantity: number;
+  color: string;
+  material: string;
+  quality: string;
+  price: number | null;
+}
+
+interface PaymentSlip {
+  id: string;
+  file_name: string;
+  verified: boolean | null;
+}
 
 interface Order {
   id: string;
@@ -25,14 +42,8 @@ interface Order {
   delivery_charge: number | null;
   created_at: string;
   notes: string | null;
-  order_items: {
-    id: string;
-    file_name: string;
-    quantity: number;
-    color: string;
-    material: string;
-    quality: string;
-  }[];
+  order_items: OrderItem[];
+  payment_slips: PaymentSlip[];
 }
 
 interface UserCoupon {
@@ -76,6 +87,13 @@ export default function Dashboard() {
     phone: "",
     address: "",
   });
+  
+  // Payment slip upload
+  const [uploadingOrderId, setUploadingOrderId] = useState<string | null>(null);
+  const [paymentSlip, setPaymentSlip] = useState<File | null>(null);
+  const [paymentSlipPreview, setPaymentSlipPreview] = useState<string | null>(null);
+  const [isUploadingSlip, setIsUploadingSlip] = useState(false);
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -94,37 +112,43 @@ export default function Dashboard() {
     }
   }, [profile]);
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      if (!user) return;
-      
-      const { data, error } = await supabase
-        .from("orders")
-        .select(`
+  const fetchOrders = async () => {
+    if (!user) return;
+    
+    const { data, error } = await supabase
+      .from("orders")
+      .select(`
+        id,
+        status,
+        total_price,
+        delivery_charge,
+        created_at,
+        notes,
+        order_items (
           id,
-          status,
-          total_price,
-          delivery_charge,
-          created_at,
-          notes,
-          order_items (
-            id,
-            file_name,
-            quantity,
-            color,
-            material,
-            quality
-          )
-        `)
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+          file_name,
+          quantity,
+          color,
+          material,
+          quality,
+          price
+        ),
+        payment_slips (
+          id,
+          file_name,
+          verified
+        )
+      `)
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
 
-      if (!error && data) {
-        setOrders(data);
-      }
-      setIsLoadingOrders(false);
-    };
+    if (!error && data) {
+      setOrders(data);
+    }
+    setIsLoadingOrders(false);
+  };
 
+  useEffect(() => {
     const fetchCoupons = async () => {
       if (!user) return;
 
@@ -191,6 +215,76 @@ export default function Dashboard() {
     }
   };
 
+  const handlePaymentSlipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
+        toast.error("Please upload an image or PDF file");
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("File size must be less than 10MB");
+        return;
+      }
+      setPaymentSlip(file);
+      if (file.type.startsWith('image/')) {
+        setPaymentSlipPreview(URL.createObjectURL(file));
+      } else {
+        setPaymentSlipPreview(null);
+      }
+    }
+  };
+
+  const handleUploadPaymentSlip = async () => {
+    if (!user || !uploadingOrderId || !paymentSlip) return;
+
+    setIsUploadingSlip(true);
+    try {
+      const slipPath = `${user.id}/${uploadingOrderId}/payment_slip_${Date.now()}_${paymentSlip.name}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from("payment-slips")
+        .upload(slipPath, paymentSlip);
+
+      if (uploadError) throw uploadError;
+
+      // Create payment slip record
+      const { error: recordError } = await supabase
+        .from("payment_slips")
+        .insert({
+          order_id: uploadingOrderId,
+          user_id: user.id,
+          file_name: paymentSlip.name,
+          file_path: slipPath,
+        });
+
+      if (recordError) throw recordError;
+
+      // Update order status
+      const { error: statusError } = await supabase
+        .from("orders")
+        .update({ status: "payment_submitted" })
+        .eq("id", uploadingOrderId);
+
+      if (statusError) throw statusError;
+
+      // Close dialog and refresh
+      setUploadingOrderId(null);
+      setPaymentSlip(null);
+      if (paymentSlipPreview) {
+        URL.revokeObjectURL(paymentSlipPreview);
+        setPaymentSlipPreview(null);
+      }
+      
+      fetchOrders();
+      toast.success("Payment slip uploaded successfully!");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to upload payment slip");
+    } finally {
+      setIsUploadingSlip(false);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const statusInfo = ORDER_STATUSES[status as keyof typeof ORDER_STATUSES];
     if (!statusInfo) return <Badge variant="outline">{status}</Badge>;
@@ -213,6 +307,13 @@ export default function Dashboard() {
         {statusInfo.label}
       </Badge>
     );
+  };
+
+  const canUploadPaymentSlip = (order: Order) => {
+    return (
+      order.status === "priced_awaiting_payment" || 
+      order.status === "payment_rejected"
+    ) && order.total_price;
   };
 
   if (authLoading) {
@@ -279,43 +380,126 @@ export default function Dashboard() {
                       {orders.map((order) => (
                         <Card key={order.id} className="hover:border-primary/30 transition-colors">
                           <CardContent className="p-4">
-                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-3">
-                                  <span className="font-mono text-sm text-muted-foreground">
-                                    #{order.id.slice(0, 8)}
-                                  </span>
-                                  {getStatusBadge(order.status)}
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  {order.order_items.map((item) => (
-                                    <div 
-                                      key={item.id}
-                                      className="flex items-center gap-2 bg-secondary px-2 py-1 rounded text-sm"
-                                    >
+                            <div className="flex flex-col gap-4">
+                              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-3 flex-wrap">
+                                    <span className="font-mono text-sm text-muted-foreground">
+                                      #{order.id.slice(0, 8)}
+                                    </span>
+                                    {getStatusBadge(order.status)}
+                                    {order.payment_slips.length > 0 && (
+                                      <Badge variant="secondary" className="gap-1">
+                                        <FileImage className="w-3 h-3" />
+                                        Slip uploaded
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {order.order_items.slice(0, 3).map((item) => (
                                       <div 
-                                        className="w-3 h-3 rounded-full border"
-                                        style={{ backgroundColor: item.color }}
-                                      />
-                                      <span className="truncate max-w-[150px]">{item.file_name}</span>
-                                      <span className="text-muted-foreground">×{item.quantity}</span>
+                                        key={item.id}
+                                        className="flex items-center gap-2 bg-secondary px-2 py-1 rounded text-sm"
+                                      >
+                                        <div 
+                                          className="w-3 h-3 rounded-full border"
+                                          style={{ backgroundColor: item.color }}
+                                        />
+                                        <span className="truncate max-w-[150px]">{item.file_name}</span>
+                                        <span className="text-muted-foreground">×{item.quantity}</span>
+                                      </div>
+                                    ))}
+                                    {order.order_items.length > 3 && (
+                                      <span className="text-sm text-muted-foreground">
+                                        +{order.order_items.length - 3} more
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                  <div className="text-right">
+                                    <p className="font-semibold">
+                                      {order.total_price ? formatPrice(order.total_price) : "Pending quote"}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {new Date(order.created_at).toLocaleDateString()}
+                                    </p>
+                                  </div>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon"
+                                    onClick={() => setExpandedOrderId(
+                                      expandedOrderId === order.id ? null : order.id
+                                    )}
+                                  >
+                                    <ChevronRight className={`w-4 h-4 transition-transform ${
+                                      expandedOrderId === order.id ? 'rotate-90' : ''
+                                    }`} />
+                                  </Button>
+                                </div>
+                              </div>
+
+                              {/* Action buttons */}
+                              {canUploadPaymentSlip(order) && (
+                                <div className="flex items-center gap-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
+                                  <AlertCircle className="w-5 h-5 text-primary flex-shrink-0" />
+                                  <div className="flex-1">
+                                    <p className="text-sm font-medium">Payment Required</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      Upload your bank transfer slip to proceed
+                                    </p>
+                                  </div>
+                                  <Button 
+                                    size="sm" 
+                                    onClick={() => setUploadingOrderId(order.id)}
+                                  >
+                                    <Upload className="w-4 h-4 mr-2" />
+                                    Upload Slip
+                                  </Button>
+                                </div>
+                              )}
+
+                              {/* Expanded details */}
+                              {expandedOrderId === order.id && (
+                                <div className="border-t pt-4 space-y-3">
+                                  <h4 className="font-medium text-sm">Order Items</h4>
+                                  <div className="space-y-2">
+                                    {order.order_items.map((item) => (
+                                      <div 
+                                        key={item.id}
+                                        className="flex items-center gap-3 p-2 bg-muted rounded"
+                                      >
+                                        <div 
+                                          className="w-4 h-4 rounded-full border"
+                                          style={{ backgroundColor: item.color }}
+                                        />
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-sm font-medium truncate">{item.file_name}</p>
+                                          <p className="text-xs text-muted-foreground">
+                                            {item.material.toUpperCase()} • {item.quality}
+                                          </p>
+                                        </div>
+                                        <span className="text-sm">×{item.quantity}</span>
+                                        {item.price && (
+                                          <span className="text-sm font-medium">
+                                            {formatPrice(item.price)}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                  {order.total_price && (
+                                    <div className="flex justify-between items-center pt-2 border-t">
+                                      <span className="text-sm text-muted-foreground">
+                                        Delivery: {formatPrice(order.delivery_charge || 0)}
+                                      </span>
+                                      <span className="font-bold">
+                                        Total: {formatPrice(order.total_price)}
+                                      </span>
                                     </div>
-                                  ))}
+                                  )}
                                 </div>
-                              </div>
-                              <div className="flex items-center gap-4">
-                                <div className="text-right">
-                                  <p className="font-semibold">
-                                    {order.total_price ? formatPrice(order.total_price) : "Pending quote"}
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {new Date(order.created_at).toLocaleDateString()}
-                                  </p>
-                                </div>
-                                <Button variant="ghost" size="icon">
-                                  <ChevronRight className="w-4 h-4" />
-                                </Button>
-                              </div>
+                              )}
                             </div>
                           </CardContent>
                         </Card>
@@ -470,7 +654,7 @@ export default function Dashboard() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="phone">Phone Number</Label>
+                      <Label htmlFor="phone">Phone</Label>
                       {isEditing ? (
                         <Input
                           id="phone"
@@ -478,21 +662,13 @@ export default function Dashboard() {
                           onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
                         />
                       ) : (
-                        <div className="flex items-center gap-2">
-                          <p className="text-lg">{profile?.phone || "-"}</p>
-                          {profile?.phone_verified && (
-                            <Badge variant="outline" className="text-success border-success">
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                              Verified
-                            </Badge>
-                          )}
-                        </div>
+                        <p className="text-lg">{profile?.phone || "-"}</p>
                       )}
                     </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="email">Email</Label>
-                      <p className="text-lg text-muted-foreground">{profile?.email || "-"}</p>
+                      <p className="text-lg text-muted-foreground">{profile?.email || user?.email || "-"}</p>
                     </div>
 
                     <div className="space-y-2 md:col-span-2">
@@ -502,7 +678,6 @@ export default function Dashboard() {
                           id="address"
                           value={editForm.address}
                           onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
-                          placeholder="Enter your full delivery address"
                         />
                       ) : (
                         <p className="text-lg">{profile?.address || "-"}</p>
@@ -515,6 +690,115 @@ export default function Dashboard() {
           </Tabs>
         </div>
       </div>
+
+      {/* Payment Slip Upload Dialog */}
+      <Dialog open={!!uploadingOrderId} onOpenChange={() => {
+        setUploadingOrderId(null);
+        setPaymentSlip(null);
+        if (paymentSlipPreview) {
+          URL.revokeObjectURL(paymentSlipPreview);
+          setPaymentSlipPreview(null);
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload Payment Slip</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {uploadingOrderId && (
+              <div className="p-3 bg-muted rounded-lg">
+                <p className="text-sm font-medium">
+                  Order #{uploadingOrderId.slice(0, 8)}
+                </p>
+                <p className="text-lg font-bold text-primary">
+                  {orders.find(o => o.id === uploadingOrderId)?.total_price 
+                    ? formatPrice(orders.find(o => o.id === uploadingOrderId)!.total_price!)
+                    : "N/A"
+                  }
+                </p>
+              </div>
+            )}
+
+            {paymentSlip ? (
+              <div className="flex items-center gap-3 p-3 border rounded-lg bg-muted/50">
+                {paymentSlipPreview ? (
+                  <img 
+                    src={paymentSlipPreview} 
+                    alt="Payment slip preview" 
+                    className="w-16 h-16 object-cover rounded"
+                  />
+                ) : (
+                  <div className="w-16 h-16 bg-primary/10 rounded flex items-center justify-center">
+                    <FileImage className="w-8 h-8 text-primary" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">{paymentSlip.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {(paymentSlip.size / 1024).toFixed(1)} KB
+                  </p>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => {
+                    setPaymentSlip(null);
+                    if (paymentSlipPreview) {
+                      URL.revokeObjectURL(paymentSlipPreview);
+                      setPaymentSlipPreview(null);
+                    }
+                  }}
+                  className="text-destructive hover:text-destructive"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            ) : (
+              <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                <input
+                  type="file"
+                  id="paymentSlipUpload"
+                  accept="image/*,application/pdf"
+                  onChange={handlePaymentSlipChange}
+                  className="hidden"
+                />
+                <label htmlFor="paymentSlipUpload" className="cursor-pointer">
+                  <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm font-medium">Click to upload payment slip</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    PNG, JPG, or PDF up to 10MB
+                  </p>
+                </label>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setUploadingOrderId(null);
+              setPaymentSlip(null);
+              if (paymentSlipPreview) {
+                URL.revokeObjectURL(paymentSlipPreview);
+                setPaymentSlipPreview(null);
+              }
+            }}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUploadPaymentSlip}
+              disabled={!paymentSlip || isUploadingSlip}
+            >
+              {isUploadingSlip ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4 mr-2" />
+              )}
+              Upload & Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }
