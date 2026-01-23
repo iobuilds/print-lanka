@@ -11,7 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Label } from "@/components/ui/label";
 import { 
   Box, Upload, Loader2, CheckCircle, ChevronRight, 
-  Percent, AlertCircle, CalendarIcon
+  Percent, AlertCircle, CalendarIcon, Tag, Check
 } from "lucide-react";
 import { formatPrice, MATERIALS, QUALITY_PRESETS } from "@/lib/constants";
 import { toast } from "sonner";
@@ -41,6 +41,17 @@ interface CouponData {
   discount_value: number;
 }
 
+interface UserCoupon {
+  id: string;
+  is_used: boolean;
+  coupon: {
+    code: string;
+    discount_type: string;
+    discount_value: number;
+    valid_until: string | null;
+  };
+}
+
 export default function Checkout() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
@@ -51,11 +62,51 @@ export default function Checkout() {
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState<Date | undefined>(
     addDays(new Date(), 7)
   );
+  const [userCoupons, setUserCoupons] = useState<UserCoupon[]>([]);
+  const [selectedCouponId, setSelectedCouponId] = useState<string | null>(null);
 
   // Get order data from memory store
   const orderData = getOrderData();
   const models: UploadedModel[] = orderData?.models || [];
-  const coupon: CouponData | null = orderData?.coupon || null;
+  const preSelectedCoupon: CouponData | null = orderData?.coupon || null;
+
+  // Fetch user's available coupons
+  useEffect(() => {
+    const fetchUserCoupons = async () => {
+      if (!user) return;
+      
+      const { data, error } = await supabase
+        .from("user_coupons")
+        .select(`
+          id,
+          is_used,
+          coupon:coupons (
+            code,
+            discount_type,
+            discount_value,
+            valid_until
+          )
+        `)
+        .eq("user_id", user.id)
+        .eq("is_used", false);
+
+      if (!error && data) {
+        const mappedCoupons = data.map((uc: any) => ({
+          id: uc.id,
+          is_used: uc.is_used,
+          coupon: uc.coupon
+        }));
+        setUserCoupons(mappedCoupons);
+        
+        // Pre-select coupon if passed from upload page
+        if (preSelectedCoupon) {
+          setSelectedCouponId(preSelectedCoupon.user_coupon_id);
+        }
+      }
+    };
+
+    fetchUserCoupons();
+  }, [user, preSelectedCoupon]);
 
   useEffect(() => {
     if (!user) {
@@ -68,6 +119,11 @@ export default function Checkout() {
       navigate("/");
     }
   }, [models.length, navigate, orderSubmitted]);
+
+  // Get selected coupon data
+  const selectedCoupon = selectedCouponId 
+    ? userCoupons.find(uc => uc.id === selectedCouponId)
+    : null;
 
   const handleSubmitOrder = async () => {
     if (!user || models.length === 0) return;
@@ -82,7 +138,7 @@ export default function Checkout() {
           user_id: user.id,
           status: "pending_review",
           notes: [
-            coupon ? `Coupon: ${coupon.code}` : null,
+            selectedCoupon ? `Coupon: ${selectedCoupon.coupon.code}` : null,
             expectedDeliveryDate ? `Expected delivery: ${format(expectedDeliveryDate, 'PPP')}` : null
           ].filter(Boolean).join(' | ') || null,
         })
@@ -127,7 +183,7 @@ export default function Checkout() {
       }
 
       // 3. Mark coupon as used if applicable
-      if (coupon) {
+      if (selectedCoupon) {
         await supabase
           .from("user_coupons")
           .update({
@@ -135,7 +191,7 @@ export default function Checkout() {
             used_at: new Date().toISOString(),
             used_on_order_id: order.id,
           })
-          .eq("id", coupon.user_coupon_id);
+          .eq("id", selectedCoupon.id);
       }
 
       // Clear order data from memory
@@ -298,6 +354,47 @@ export default function Checkout() {
                 </CardContent>
               </Card>
 
+              {/* Coupon Selection */}
+              {userCoupons.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Tag className="w-5 h-5" />
+                      Apply Coupon
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        Select a coupon to apply to your order
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {userCoupons.map((uc) => (
+                          <button
+                            key={uc.id}
+                            onClick={() => setSelectedCouponId(selectedCouponId === uc.id ? null : uc.id)}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+                              selectedCouponId === uc.id
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-secondary border-border hover:border-primary/50"
+                            }`}
+                          >
+                            {selectedCouponId === uc.id && <Check className="w-4 h-4" />}
+                            <Percent className="w-3 h-3" />
+                            <span className="font-medium text-sm">{uc.coupon.code}</span>
+                            <span className="text-xs opacity-80">
+                              {uc.coupon.discount_type === 'percentage' 
+                                ? `${uc.coupon.discount_value}% off` 
+                                : `LKR ${uc.coupon.discount_value} off`}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Info about payment */}
               <Card>
                 <CardContent className="pt-6">
@@ -361,18 +458,18 @@ export default function Checkout() {
                     </div>
                   )}
 
-                  {coupon && (
+                  {selectedCoupon && (
                     <>
                       <Separator />
                       <div className="flex items-center justify-between text-sm bg-success/10 p-2 rounded">
                         <div className="flex items-center gap-2 text-success">
                           <Percent className="w-4 h-4" />
-                          <span className="font-medium">{coupon.code}</span>
+                          <span className="font-medium">{selectedCoupon.coupon.code}</span>
                         </div>
                         <span className="text-success font-medium">
-                          {coupon.discount_type === "percentage"
-                            ? `-${coupon.discount_value}%`
-                            : `-${formatPrice(coupon.discount_value)}`}
+                          {selectedCoupon.coupon.discount_type === "percentage"
+                            ? `-${selectedCoupon.coupon.discount_value}%`
+                            : `-${formatPrice(selectedCoupon.coupon.discount_value)}`}
                         </span>
                       </div>
                     </>
