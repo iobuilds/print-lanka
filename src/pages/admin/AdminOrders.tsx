@@ -697,17 +697,49 @@ export default function AdminOrders() {
                       </TableCell>
                       <TableCell>{order.order_items.length} items</TableCell>
                       <TableCell>
-                        {order.total_price ? (
-                          <div className="flex items-center gap-2">
-                            <span>{formatPrice(order.total_price)}</span>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-6 px-2"
-                              onClick={() => openPricingDialog(order)}
-                            >
-                              <DollarSign className="w-3 h-3" />
-                            </Button>
+                        {order.total_price != null ? (
+                          <div className="space-y-1">
+                            {/* Calculate breakdown */}
+                            {(() => {
+                              const itemsTotal = order.order_items.reduce((sum, item) => sum + (item.price || 0), 0);
+                              const delivery = order.delivery_charge || 0;
+                              const subtotal = itemsTotal + delivery;
+                              const discount = order.applied_coupon
+                                ? order.applied_coupon.discount_type === "percentage"
+                                  ? Math.round((subtotal * order.applied_coupon.discount_value) / 100)
+                                  : order.applied_coupon.discount_value
+                                : 0;
+                              const collectAmount = Math.max(0, subtotal - discount);
+                              
+                              return (
+                                <>
+                                  {order.applied_coupon && discount > 0 && (
+                                    <>
+                                      <div className="text-xs text-muted-foreground">
+                                        Subtotal: {formatPrice(subtotal)}
+                                      </div>
+                                      <div className="text-xs text-green-600 flex items-center gap-1">
+                                        <Tag className="w-3 h-3" />
+                                        -{formatPrice(discount)}
+                                      </div>
+                                    </>
+                                  )}
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-primary">
+                                      {formatPrice(collectAmount)}
+                                    </span>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-6 px-2"
+                                      onClick={() => openPricingDialog(order)}
+                                    >
+                                      <DollarSign className="w-3 h-3" />
+                                    </Button>
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
                         ) : (
                           <Button
