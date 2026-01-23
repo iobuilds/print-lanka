@@ -50,6 +50,7 @@ export default function Coupons() {
         .from("coupons")
         .select("id, code, discount_type, discount_value, min_order_value, max_uses, current_uses, valid_until")
         .eq("is_active", true)
+         .eq("is_public", true)
         .or("valid_until.is.null,valid_until.gt.now()");
 
       if (couponsError) throw couponsError;
