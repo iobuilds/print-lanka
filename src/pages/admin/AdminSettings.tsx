@@ -7,8 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings, MessageSquare, Truck, Save, Loader2, TestTube, DollarSign, Palette, Package } from "lucide-react";
+import { 
+  Settings, MessageSquare, Truck, Save, Loader2, TestTube, 
+  DollarSign, Palette, Package, Trash2, Database, Download, 
+  Upload, AlertTriangle, CheckCircle, HardDrive, FileBox
+} from "lucide-react";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface SMSConfig {
   provider: string;
@@ -92,9 +98,20 @@ export default function AdminSettings() {
   const [isSavingPricing, setIsSavingPricing] = useState(false);
   const [testPhone, setTestPhone] = useState("");
   const [isTesting, setIsTesting] = useState(false);
+  
+  // Maintenance state
+  const [isClearingFiles, setIsClearingFiles] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [completedOrdersCount, setCompletedOrdersCount] = useState(0);
+  const [completedFilesCount, setCompletedFilesCount] = useState(0);
+  const [isExportingDb, setIsExportingDb] = useState(false);
+  const [isImportingDb, setIsImportingDb] = useState(false);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
 
   useEffect(() => {
     fetchSettings();
+    fetchCompletedOrdersStats();
   }, []);
 
   const fetchSettings = async () => {
@@ -218,6 +235,191 @@ export default function AdminSettings() {
     }
   };
 
+  // Fetch completed orders count for cleanup preview
+  const fetchCompletedOrdersStats = async () => {
+    const { data: completedOrders, error } = await supabase
+      .from("orders")
+      .select("id")
+      .eq("status", "completed");
+    
+    if (!error && completedOrders) {
+      setCompletedOrdersCount(completedOrders.length);
+      
+      // Count files for completed orders
+      const orderIds = completedOrders.map(o => o.id);
+      if (orderIds.length > 0) {
+        const { data: orderItems } = await supabase
+          .from("order_items")
+          .select("id, file_path")
+          .in("order_id", orderIds);
+        setCompletedFilesCount(orderItems?.length || 0);
+      }
+    }
+  };
+
+  // Clear completed orders' model files
+  const handleClearCompletedFiles = async () => {
+    setIsClearingFiles(true);
+    try {
+      // Get all completed orders
+      const { data: completedOrders, error: ordersError } = await supabase
+        .from("orders")
+        .select("id")
+        .eq("status", "completed");
+
+      if (ordersError) throw ordersError;
+      if (!completedOrders || completedOrders.length === 0) {
+        toast.info("No completed orders to clean up");
+        setShowClearConfirm(false);
+        return;
+      }
+
+      const orderIds = completedOrders.map(o => o.id);
+
+      // Get all order items for completed orders
+      const { data: orderItems, error: itemsError } = await supabase
+        .from("order_items")
+        .select("id, file_path")
+        .in("order_id", orderIds);
+
+      if (itemsError) throw itemsError;
+
+      // Delete files from storage
+      let deletedCount = 0;
+      for (const item of orderItems || []) {
+        if (item.file_path) {
+          const { error: deleteError } = await supabase.storage
+            .from("models")
+            .remove([item.file_path]);
+          
+          if (!deleteError) {
+            deletedCount++;
+          }
+        }
+      }
+
+      toast.success(`Cleared ${deletedCount} model files from completed orders`);
+      setShowClearConfirm(false);
+      fetchCompletedOrdersStats();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to clear files");
+    } finally {
+      setIsClearingFiles(false);
+    }
+  };
+
+  // Export database backup
+  const handleExportBackup = async () => {
+    setIsExportingDb(true);
+    try {
+      // Fetch all tables data
+      const [orders, orderItems, profiles, coupons, userCoupons, colors, settings] = await Promise.all([
+        supabase.from("orders").select("*"),
+        supabase.from("order_items").select("*"),
+        supabase.from("profiles").select("*"),
+        supabase.from("coupons").select("*"),
+        supabase.from("user_coupons").select("*"),
+        supabase.from("available_colors").select("*"),
+        supabase.from("system_settings").select("*"),
+      ]);
+
+      const backup = {
+        version: "1.0",
+        created_at: new Date().toISOString(),
+        tables: {
+          orders: orders.data || [],
+          order_items: orderItems.data || [],
+          profiles: profiles.data || [],
+          coupons: coupons.data || [],
+          user_coupons: userCoupons.data || [],
+          available_colors: colors.data || [],
+          system_settings: settings.data || [],
+        },
+      };
+
+      // Download as JSON file
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `print3d-backup-${new Date().toISOString().split("T")[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success("Database backup downloaded");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to export backup");
+    } finally {
+      setIsExportingDb(false);
+    }
+  };
+
+  // Handle restore file selection
+  const handleRestoreFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.name.endsWith(".json")) {
+        toast.error("Please select a JSON backup file");
+        return;
+      }
+      setRestoreFile(file);
+      setShowRestoreConfirm(true);
+    }
+  };
+
+  // Restore database from backup
+  const handleRestoreBackup = async () => {
+    if (!restoreFile) return;
+
+    setIsImportingDb(true);
+    try {
+      const text = await restoreFile.text();
+      const backup = JSON.parse(text);
+
+      if (!backup.version || !backup.tables) {
+        throw new Error("Invalid backup file format");
+      }
+
+      // Restore system_settings (upsert)
+      if (backup.tables.system_settings?.length) {
+        for (const setting of backup.tables.system_settings) {
+          await supabase
+            .from("system_settings")
+            .upsert(setting, { onConflict: "key" });
+        }
+      }
+
+      // Restore available_colors (upsert by id)
+      if (backup.tables.available_colors?.length) {
+        for (const color of backup.tables.available_colors) {
+          await supabase
+            .from("available_colors")
+            .upsert(color, { onConflict: "id" });
+        }
+      }
+
+      // Restore coupons (upsert by id)
+      if (backup.tables.coupons?.length) {
+        for (const coupon of backup.tables.coupons) {
+          await supabase
+            .from("coupons")
+            .upsert(coupon, { onConflict: "id" });
+        }
+      }
+
+      toast.success("Settings and configuration restored from backup");
+      setShowRestoreConfirm(false);
+      setRestoreFile(null);
+      fetchSettings();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to restore backup");
+    } finally {
+      setIsImportingDb(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
@@ -246,6 +448,10 @@ export default function AdminSettings() {
           <TabsTrigger value="sms" className="gap-2">
             <MessageSquare className="w-4 h-4" />
             SMS
+          </TabsTrigger>
+          <TabsTrigger value="maintenance" className="gap-2">
+            <HardDrive className="w-4 h-4" />
+            Maintenance
           </TabsTrigger>
         </TabsList>
 
@@ -714,7 +920,188 @@ export default function AdminSettings() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Maintenance Settings */}
+        <TabsContent value="maintenance" className="space-y-6">
+          {/* Storage Cleanup */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileBox className="w-5 h-5" />
+                Storage Cleanup
+              </CardTitle>
+              <CardDescription>
+                Clear 3D model files from completed orders to free up storage space
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="p-4 bg-muted rounded-lg">
+                  <div className="text-3xl font-bold text-primary">{completedOrdersCount}</div>
+                  <div className="text-sm text-muted-foreground">Completed Orders</div>
+                </div>
+                <div className="p-4 bg-muted rounded-lg">
+                  <div className="text-3xl font-bold text-orange-500">{completedFilesCount}</div>
+                  <div className="text-sm text-muted-foreground">Model Files to Clear</div>
+                </div>
+              </div>
+
+              <Alert>
+                <AlertTriangle className="w-4 h-4" />
+                <AlertDescription>
+                  This will permanently delete all uploaded 3D model files from completed orders. 
+                  Order records will be kept but files cannot be recovered.
+                </AlertDescription>
+              </Alert>
+
+              <Button 
+                variant="destructive" 
+                onClick={() => setShowClearConfirm(true)}
+                disabled={completedFilesCount === 0}
+                className="gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Clear Completed Order Files
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Database Backup */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Database className="w-5 h-5" />
+                Database Backup & Restore
+              </CardTitle>
+              <CardDescription>
+                Export settings and data for backup, or restore from a previous backup
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Export */}
+              <div className="space-y-3">
+                <h4 className="font-medium flex items-center gap-2">
+                  <Download className="w-4 h-4" />
+                  Export Backup
+                </h4>
+                <p className="text-sm text-muted-foreground">
+                  Download all orders, profiles, coupons, colors, and settings as a JSON file.
+                </p>
+                <Button 
+                  variant="outline" 
+                  onClick={handleExportBackup}
+                  disabled={isExportingDb}
+                  className="gap-2"
+                >
+                  {isExportingDb ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  Download Backup
+                </Button>
+              </div>
+
+              <div className="border-t pt-6">
+                {/* Import */}
+                <div className="space-y-3">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <Upload className="w-4 h-4" />
+                    Restore from Backup
+                  </h4>
+                  <p className="text-sm text-muted-foreground">
+                    Restore settings, colors, and coupons from a backup file. 
+                    <span className="text-orange-500 font-medium"> This will overwrite current settings.</span>
+                  </p>
+                  <div>
+                    <Input
+                      type="file"
+                      accept=".json"
+                      onChange={handleRestoreFileChange}
+                      className="max-w-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      {/* Clear Files Confirmation Dialog */}
+      <Dialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              Confirm File Deletion
+            </DialogTitle>
+            <DialogDescription>
+              You are about to permanently delete {completedFilesCount} model files from {completedOrdersCount} completed orders.
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowClearConfirm(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleClearCompletedFiles}
+              disabled={isClearingFiles}
+            >
+              {isClearingFiles ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4 mr-2" />
+              )}
+              Delete Files
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Restore Confirmation Dialog */}
+      <Dialog open={showRestoreConfirm} onOpenChange={setShowRestoreConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-500">
+              <Upload className="w-5 h-5" />
+              Confirm Restore
+            </DialogTitle>
+            <DialogDescription>
+              This will restore settings, colors, and coupons from the backup file.
+              Current settings will be overwritten.
+            </DialogDescription>
+          </DialogHeader>
+          {restoreFile && (
+            <div className="p-3 bg-muted rounded-lg">
+              <p className="text-sm">
+                <span className="font-medium">File:</span> {restoreFile.name}
+              </p>
+              <p className="text-sm">
+                <span className="font-medium">Size:</span> {(restoreFile.size / 1024).toFixed(1)} KB
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowRestoreConfirm(false); setRestoreFile(null); }}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleRestoreBackup}
+              disabled={isImportingDb}
+            >
+              {isImportingDb ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <CheckCircle className="w-4 h-4 mr-2" />
+              )}
+              Restore
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
