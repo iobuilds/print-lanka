@@ -1,16 +1,18 @@
-import { useState, useCallback, useRef, Suspense } from "react";
+import { useState, useCallback, useRef, Suspense, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Stage, Center } from "@react-three/drei";
-import { Upload, FileUp, X, Box, RotateCcw, ZoomIn, Minus, Plus, ChevronRight } from "lucide-react";
+import { Upload, FileUp, X, Box, RotateCcw, ZoomIn, Minus, Plus, ChevronRight, Tag, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { MATERIALS, QUALITY_PRESETS } from "@/lib/constants";
+import { supabase } from "@/integrations/supabase/client";
 import * as THREE from "three";
 
 interface UploadedModel {
@@ -29,16 +31,17 @@ interface ModelConfig {
   notes: string;
 }
 
-const COLORS = [
-  { name: "White", value: "#FFFFFF" },
-  { name: "Black", value: "#1a1a1a" },
-  { name: "Red", value: "#ef4444" },
-  { name: "Blue", value: "#3b82f6" },
-  { name: "Green", value: "#22c55e" },
-  { name: "Yellow", value: "#eab308" },
-  { name: "Orange", value: "#f97316" },
-  { name: "Purple", value: "#a855f7" },
-];
+interface AvailableColor {
+  id: string;
+  name: string;
+  hex_value: string;
+}
+
+interface AppliedCoupon {
+  code: string;
+  discount_type: string;
+  discount_value: number;
+}
 
 const defaultConfig: ModelConfig = {
   material: "pla",
@@ -84,9 +87,71 @@ export function ModelUploadSection() {
   const [uploadedModels, setUploadedModels] = useState<UploadedModel[]>([]);
   const [activeModel, setActiveModel] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [availableColors, setAvailableColors] = useState<AvailableColor[]>([]);
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
+  const [couponError, setCouponError] = useState("");
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
+
+  // Fetch available colors from database
+  useEffect(() => {
+    const fetchColors = async () => {
+      const { data } = await supabase
+        .from("available_colors")
+        .select("id, name, hex_value")
+        .eq("is_active", true)
+        .order("sort_order");
+      
+      if (data && data.length > 0) {
+        setAvailableColors(data);
+      }
+    };
+    fetchColors();
+  }, []);
+
+  const validateCoupon = async () => {
+    if (!couponCode.trim()) return;
+    
+    setIsValidatingCoupon(true);
+    setCouponError("");
+    
+    try {
+      const { data, error } = await supabase
+        .from("coupons")
+        .select("code, discount_type, discount_value, min_order_value, max_uses, current_uses")
+        .eq("code", couponCode.trim().toUpperCase())
+        .eq("is_active", true)
+        .single();
+      
+      if (error || !data) {
+        setCouponError("Invalid coupon code");
+        setAppliedCoupon(null);
+      } else if (data.max_uses && data.current_uses >= data.max_uses) {
+        setCouponError("Coupon has reached maximum uses");
+        setAppliedCoupon(null);
+      } else {
+        setAppliedCoupon({
+          code: data.code,
+          discount_type: data.discount_type,
+          discount_value: Number(data.discount_value)
+        });
+        setCouponError("");
+      }
+    } catch {
+      setCouponError("Failed to validate coupon");
+    } finally {
+      setIsValidatingCoupon(false);
+    }
+  };
+
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode("");
+    setCouponError("");
+  };
 
   const parseSTL = useCallback((arrayBuffer: ArrayBuffer): THREE.BufferGeometry => {
     const geometry = new THREE.BufferGeometry();
@@ -145,12 +210,13 @@ export function ModelUploadSection() {
     try {
       const arrayBuffer = await file.arrayBuffer();
       const geometry = parseSTL(arrayBuffer);
+      const defaultColor = availableColors.length > 0 ? availableColors[0].hex_value : "#FFFFFF";
       
       setUploadedModels(prev => [...prev, {
         file,
         geometry,
         name: file.name,
-        config: { ...defaultConfig }
+        config: { ...defaultConfig, color: defaultColor }
       }]);
       setActiveModel(uploadedModels.length);
     } catch (error) {
@@ -158,7 +224,7 @@ export function ModelUploadSection() {
     } finally {
       setIsLoading(false);
     }
-  }, [parseSTL, uploadedModels.length]);
+  }, [parseSTL, uploadedModels.length, availableColors]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -189,9 +255,9 @@ export function ModelUploadSection() {
     }
   };
 
-  const updateModelConfig = (key: keyof ModelConfig, value: string | number) => {
+  const updateModelConfig = (index: number, key: keyof ModelConfig, value: string | number) => {
     setUploadedModels(prev => prev.map((model, i) => 
-      i === activeModel 
+      i === index 
         ? { ...model, config: { ...model.config, [key]: value } }
         : model
     ));
@@ -199,17 +265,63 @@ export function ModelUploadSection() {
 
   const handleSubmitOrder = () => {
     if (user) {
-      navigate("/checkout", { state: { models: uploadedModels } });
+      navigate("/checkout", { state: { models: uploadedModels, coupon: appliedCoupon } });
     } else {
-      navigate("/register", { state: { models: uploadedModels } });
+      navigate("/register", { state: { models: uploadedModels, coupon: appliedCoupon } });
     }
   };
 
   const currentModel = uploadedModels[activeModel];
+  const colorsToUse = availableColors.length > 0 ? availableColors : [
+    { id: "1", name: "White", hex_value: "#FFFFFF" },
+    { id: "2", name: "Black", hex_value: "#1a1a1a" },
+  ];
 
   return (
-    <section className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 py-8" id="upload">
+    <section className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 py-6" id="upload">
       <div className="container mx-auto px-4 h-full">
+        {/* Coupon Code Section - Top */}
+        <Card className="mb-4">
+          <CardContent className="py-3 px-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Tag className="w-5 h-5 text-primary" />
+              <span className="font-medium text-sm">Have a coupon?</span>
+              {appliedCoupon ? (
+                <div className="flex items-center gap-2 bg-success/10 text-success px-3 py-1.5 rounded-lg">
+                  <Check className="w-4 h-4" />
+                  <span className="font-medium">{appliedCoupon.code}</span>
+                  <span className="text-sm">
+                    ({appliedCoupon.discount_type === 'percentage' 
+                      ? `${appliedCoupon.discount_value}% off` 
+                      : `LKR ${appliedCoupon.discount_value} off`})
+                  </span>
+                  <button onClick={removeCoupon} className="ml-1 hover:text-destructive">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 flex-1 max-w-md">
+                  <Input
+                    placeholder="Enter coupon code"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    className="h-9 bg-background"
+                    onKeyDown={(e) => e.key === 'Enter' && validateCoupon()}
+                  />
+                  <Button 
+                    size="sm" 
+                    onClick={validateCoupon}
+                    disabled={isValidatingCoupon || !couponCode.trim()}
+                  >
+                    {isValidatingCoupon ? <Loader2 className="w-4 h-4 animate-spin" /> : "Apply"}
+                  </Button>
+                </div>
+              )}
+              {couponError && <span className="text-sm text-destructive">{couponError}</span>}
+            </div>
+          </CardContent>
+        </Card>
+
         <div className="grid lg:grid-cols-2 gap-6 h-full">
           {/* Left Side - Drag & Drop + 3D Viewer */}
           <div className="flex flex-col gap-4">
@@ -296,7 +408,10 @@ export function ModelUploadSection() {
                             }`}
                             onClick={() => setActiveModel(index)}
                           >
-                            <Box className="w-4 h-4 text-primary" />
+                            <div 
+                              className="w-4 h-4 rounded-full border border-border" 
+                              style={{ backgroundColor: model.config.color }}
+                            />
                             <span className="text-sm font-medium truncate max-w-[100px]">{model.name}</span>
                             <button
                               onClick={(e) => {
@@ -332,138 +447,166 @@ export function ModelUploadSection() {
             </Card>
           </div>
 
-          {/* Right Side - Order Configuration */}
+          {/* Right Side - Order Configuration for Each Model */}
           <div className="flex flex-col gap-4">
-            <Card className="flex-1">
-              <CardHeader className="pb-4">
-                <CardTitle className="font-display text-xl">
-                  {uploadedModels.length > 0 ? `Configure: ${currentModel?.name}` : "Order Configuration"}
-                </CardTitle>
+            <Card className="flex-1 overflow-auto max-h-[calc(100vh-220px)]">
+              <CardHeader className="pb-2 sticky top-0 bg-card z-10 border-b">
+                <CardTitle className="font-display text-xl">Order Configuration</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-5">
+              <CardContent className="space-y-4 pt-4">
                 {uploadedModels.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <Box className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                    <p>Upload a 3D model to configure your order</p>
+                    <p>Upload 3D models to configure your order</p>
                   </div>
                 ) : (
-                  <>
-                    {/* Material Selection */}
-                    <div className="space-y-2">
-                      <Label>Material</Label>
-                      <Select
-                        value={currentModel?.config.material}
-                        onValueChange={(v) => updateModelConfig("material", v)}
-                      >
-                        <SelectTrigger className="bg-background">
-                          <SelectValue placeholder="Select material" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-popover z-50">
-                          {Object.entries(MATERIALS).map(([key, mat]) => (
-                            <SelectItem key={key} value={key}>
-                              {mat.name} (+{mat.surcharge}%)
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* Quality Selection */}
-                    <div className="space-y-2">
-                      <Label>Print Quality</Label>
-                      <Select
-                        value={currentModel?.config.quality}
-                        onValueChange={(v) => updateModelConfig("quality", v)}
-                      >
-                        <SelectTrigger className="bg-background">
-                          <SelectValue placeholder="Select quality" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-popover z-50">
-                          {Object.entries(QUALITY_PRESETS).map(([key, preset]) => (
-                            <SelectItem key={key} value={key}>
-                              {preset.name} - LKR {preset.pricePerGram}/g
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* Color Selection */}
-                    <div className="space-y-2">
-                      <Label>Color</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {COLORS.map((color) => (
+                  uploadedModels.map((model, index) => (
+                    <Card key={index} className={`border ${activeModel === index ? 'border-primary/50 bg-primary/5' : ''}`}>
+                      <CardContent className="p-4 space-y-4">
+                        {/* Model Header */}
+                        <div 
+                          className="flex items-center gap-3 cursor-pointer"
+                          onClick={() => setActiveModel(index)}
+                        >
+                          <div 
+                            className="w-8 h-8 rounded-lg flex items-center justify-center"
+                            style={{ backgroundColor: model.config.color }}
+                          >
+                            <Box className="w-4 h-4 text-white mix-blend-difference" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">{model.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {(model.file.size / 1024 / 1024).toFixed(2)} MB
+                            </p>
+                          </div>
                           <button
-                            key={color.value}
-                            onClick={() => updateModelConfig("color", color.value)}
-                            className={`w-8 h-8 rounded-full border-2 transition-all ${
-                              currentModel?.config.color === color.value
-                                ? "border-primary scale-110 shadow-md"
-                                : "border-border hover:border-primary/50"
-                            }`}
-                            style={{ backgroundColor: color.value }}
-                            title={color.name}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeModel(index);
+                            }}
+                            className="p-1.5 hover:bg-destructive/20 rounded text-muted-foreground hover:text-destructive"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Color Selection */}
+                        <div className="space-y-2">
+                          <Label className="text-xs">Color</Label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {colorsToUse.map((color) => (
+                              <button
+                                key={color.id}
+                                onClick={() => updateModelConfig(index, "color", color.hex_value)}
+                                className={`w-7 h-7 rounded-full border-2 transition-all ${
+                                  model.config.color === color.hex_value
+                                    ? "border-primary scale-110 shadow-md"
+                                    : "border-border hover:border-primary/50"
+                                }`}
+                                style={{ backgroundColor: color.hex_value }}
+                                title={color.name}
+                              />
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Material & Quality Row */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Material</Label>
+                            <Select
+                              value={model.config.material}
+                              onValueChange={(v) => updateModelConfig(index, "material", v)}
+                            >
+                              <SelectTrigger className="h-9 text-xs bg-background">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="bg-popover z-50">
+                                {Object.entries(MATERIALS).map(([key, mat]) => (
+                                  <SelectItem key={key} value={key} className="text-xs">
+                                    {mat.name} {mat.surcharge > 0 && `(+${mat.surcharge}%)`}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Quality</Label>
+                            <Select
+                              value={model.config.quality}
+                              onValueChange={(v) => updateModelConfig(index, "quality", v)}
+                            >
+                              <SelectTrigger className="h-9 text-xs bg-background">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="bg-popover z-50">
+                                {Object.entries(QUALITY_PRESETS).map(([key, preset]) => (
+                                  <SelectItem key={key} value={key} className="text-xs">
+                                    {preset.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        {/* Infill */}
+                        <div className="space-y-1">
+                          <div className="flex justify-between">
+                            <Label className="text-xs">Infill</Label>
+                            <span className="text-xs text-muted-foreground">{model.config.infill}%</span>
+                          </div>
+                          <Slider
+                            value={[model.config.infill]}
+                            onValueChange={([v]) => updateModelConfig(index, "infill", v)}
+                            min={10}
+                            max={100}
+                            step={5}
+                            className="py-1"
                           />
-                        ))}
-                      </div>
-                    </div>
+                        </div>
 
-                    {/* Infill Percentage */}
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <Label>Infill Percentage</Label>
-                        <span className="text-sm text-muted-foreground">{currentModel?.config.infill}%</span>
-                      </div>
-                      <Slider
-                        value={[currentModel?.config.infill || 20]}
-                        onValueChange={([v]) => updateModelConfig("infill", v)}
-                        min={10}
-                        max={100}
-                        step={5}
-                        className="py-2"
-                      />
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>Light (10%)</span>
-                        <span>Solid (100%)</span>
-                      </div>
-                    </div>
+                        {/* Quantity */}
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs">Quantity</Label>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => updateModelConfig(index, "quantity", Math.max(1, model.config.quantity - 1))}
+                            >
+                              <Minus className="w-3 h-3" />
+                            </Button>
+                            <span className="w-8 text-center font-semibold">
+                              {model.config.quantity}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => updateModelConfig(index, "quantity", model.config.quantity + 1)}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
 
-                    {/* Quantity */}
-                    <div className="space-y-2">
-                      <Label>Quantity</Label>
-                      <div className="flex items-center gap-3">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => updateModelConfig("quantity", Math.max(1, (currentModel?.config.quantity || 1) - 1))}
-                        >
-                          <Minus className="w-4 h-4" />
-                        </Button>
-                        <span className="w-12 text-center font-semibold text-lg">
-                          {currentModel?.config.quantity}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => updateModelConfig("quantity", (currentModel?.config.quantity || 1) + 1)}
-                        >
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Notes */}
-                    <div className="space-y-2">
-                      <Label>Special Instructions (Optional)</Label>
-                      <Textarea
-                        placeholder="Any special requirements or notes..."
-                        value={currentModel?.config.notes}
-                        onChange={(e) => updateModelConfig("notes", e.target.value)}
-                        rows={3}
-                        className="bg-background"
-                      />
-                    </div>
-                  </>
+                        {/* Notes */}
+                        <div className="space-y-1">
+                          <Label className="text-xs">Notes (Optional)</Label>
+                          <Textarea
+                            placeholder="Special instructions..."
+                            value={model.config.notes}
+                            onChange={(e) => updateModelConfig(index, "notes", e.target.value)}
+                            rows={2}
+                            className="text-xs bg-background resize-none"
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
                 )}
               </CardContent>
             </Card>
