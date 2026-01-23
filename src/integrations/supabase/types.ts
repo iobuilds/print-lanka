@@ -409,6 +409,54 @@ export type Database = {
         }
         Relationships: []
       }
+      user_coupons: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          coupon_id: string
+          id: string
+          is_used: boolean | null
+          used_at: string | null
+          used_on_order_id: string | null
+          user_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          coupon_id: string
+          id?: string
+          is_used?: boolean | null
+          used_at?: string | null
+          used_on_order_id?: string | null
+          user_id: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          coupon_id?: string
+          id?: string
+          is_used?: boolean | null
+          used_at?: string | null
+          used_on_order_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_coupons_coupon_id_fkey"
+            columns: ["coupon_id"]
+            isOneToOne: false
+            referencedRelation: "coupons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_coupons_used_on_order_id_fkey"
+            columns: ["used_on_order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
