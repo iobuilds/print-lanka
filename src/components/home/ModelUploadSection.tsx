@@ -323,11 +323,11 @@ export function ModelUploadSection() {
   ];
 
   return (
-    <section className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 py-6" id="upload">
-      <div className="container mx-auto px-4 h-full">
+    <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-br from-background via-background to-primary/5 py-8 flex items-center" id="upload">
+      <div className="container mx-auto px-4">
         {/* User's Available Coupons - Top */}
         {user && userCoupons.length > 0 && (
-          <Card className="mb-4">
+          <Card className="mb-6">
             <CardContent className="py-3 px-4">
               <div className="flex flex-wrap items-center gap-3">
                 <Tag className="w-5 h-5 text-primary" />
@@ -364,9 +364,9 @@ export function ModelUploadSection() {
           </Card>
         )}
 
-        <div className="grid lg:grid-cols-2 gap-6 h-full">
-          {/* Left Side - Drag & Drop + 3D Viewer */}
-          <div className="flex flex-col gap-4">
+        <div className="grid lg:grid-cols-5 gap-8 items-start max-w-7xl mx-auto">
+          {/* Left Side - Drag & Drop + 3D Viewer (takes 3 columns) */}
+          <div className="lg:col-span-3 flex flex-col gap-4">
             <div className="text-center lg:text-left">
               <h1 className="font-display text-3xl md:text-4xl font-bold mb-2">
                 Upload Your <span className="text-gradient">3D Model</span>
@@ -376,11 +376,11 @@ export function ModelUploadSection() {
               </p>
             </div>
 
-            <Card className="flex-1 overflow-hidden border-2 border-dashed border-border hover:border-primary/50 transition-colors">
-              <CardContent className="p-0 h-full">
+            <Card className="overflow-hidden border-2 border-dashed border-border hover:border-primary/50 transition-colors">
+              <CardContent className="p-0">
                 {uploadedModels.length === 0 ? (
                   <div
-                    className={`relative h-full min-h-[400px] flex flex-col items-center justify-center p-8 transition-all duration-300 ${
+                    className={`relative min-h-[450px] flex flex-col items-center justify-center p-8 transition-all duration-300 ${
                       isDragging ? "bg-primary/10 border-primary" : "bg-secondary/30"
                     }`}
                     onDrop={handleDrop}
@@ -420,7 +420,7 @@ export function ModelUploadSection() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="h-full min-h-[400px] flex flex-col">
+                  <div className="min-h-[450px] flex flex-col">
                     {/* 3D Viewer */}
                     <div className="relative flex-1 bg-gradient-to-br from-slate-900 to-slate-800">
                       {currentModel?.geometry && (
@@ -489,9 +489,9 @@ export function ModelUploadSection() {
             </Card>
           </div>
 
-          {/* Right Side - Order Configuration for Each Model */}
-          <div className="flex flex-col gap-4">
-            <Card className="flex-1 overflow-auto max-h-[calc(100vh-220px)]">
+          {/* Right Side - Order Configuration (takes 2 columns) */}
+          <div className="lg:col-span-2 flex flex-col gap-4">
+            <Card className="overflow-auto max-h-[calc(100vh-180px)]">
               <CardHeader className="pb-2 sticky top-0 bg-card z-10 border-b">
                 <CardTitle className="font-display text-xl">Order Configuration</CardTitle>
               </CardHeader>
