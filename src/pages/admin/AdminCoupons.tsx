@@ -20,6 +20,7 @@ interface Coupon {
   discount_value: number;
   min_order_value: number | null;
   max_uses: number | null;
+  uses_per_user: number | null;
   current_uses: number;
   is_active: boolean;
   valid_from: string;
