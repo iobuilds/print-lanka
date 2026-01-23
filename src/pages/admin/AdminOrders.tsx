@@ -945,32 +945,53 @@ export default function AdminOrders() {
                 </div>
               )}
 
-              {/* Price Summary */}
-              <div className="space-y-2 p-4 bg-muted/50 rounded-lg">
-                {/* Subtotal */}
+              {/* Price Summary - Always show breakdown */}
+              <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border">
+                {/* Items Subtotal */}
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-muted-foreground">Subtotal (Items + Delivery)</span>
+                  <span className="text-muted-foreground">Items Total</span>
+                  <span className="font-medium">
+                    {formatPrice(Object.values(itemPrices).reduce((sum, p) => sum + (p || 0), 0))}
+                  </span>
+                </div>
+
+                {/* Delivery */}
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">Delivery Charge</span>
+                  <span className="font-medium">{formatPrice(deliveryCharge)}</span>
+                </div>
+
+                {/* Subtotal before discount */}
+                <div className="flex justify-between items-center text-sm border-t pt-2">
+                  <span className="text-muted-foreground">Subtotal</span>
                   <span className="font-medium">{formatPrice(calculateTotal())}</span>
                 </div>
 
-                {/* Discount row - only show if coupon applied */}
+                {/* Discount row - show if coupon applied */}
                 {pricingOrder.applied_coupon && (
-                  <div className="flex justify-between items-center text-sm text-green-600">
-                    <span className="flex items-center gap-1">
-                      <Percent className="w-3 h-3" />
-                      Coupon Discount ({pricingOrder.applied_coupon.code})
+                  <div className="flex justify-between items-center text-sm bg-green-100 dark:bg-green-900/30 p-2 rounded -mx-2">
+                    <span className="flex items-center gap-2 text-green-700 dark:text-green-400 font-medium">
+                      <Percent className="w-4 h-4" />
+                      Coupon: {pricingOrder.applied_coupon.code}
+                      <span className="text-xs">
+                        ({pricingOrder.applied_coupon.discount_type === "percentage" 
+                          ? `${pricingOrder.applied_coupon.discount_value}%` 
+                          : formatPrice(pricingOrder.applied_coupon.discount_value)})
+                      </span>
                     </span>
-                    <span className="font-medium">
+                    <span className="font-bold text-green-700 dark:text-green-400">
                       -{formatPrice(calculateDiscount(calculateTotal(), pricingOrder.applied_coupon))}
                     </span>
                   </div>
                 )}
 
-                <Separator className="my-2" />
+                <Separator />
 
                 {/* Final Total */}
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold text-lg">Customer Pays</span>
+                <div className="flex justify-between items-center bg-primary/10 p-3 rounded -mx-1">
+                  <span className="font-bold text-lg">
+                    {pricingOrder.applied_coupon ? "Customer Pays" : "Total"}
+                  </span>
                   <span className="text-2xl font-bold text-primary">
                     {formatPrice(calculateFinalTotal())}
                   </span>
