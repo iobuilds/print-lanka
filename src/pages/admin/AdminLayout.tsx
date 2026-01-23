@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, Outlet, Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
@@ -8,10 +8,11 @@ import {
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/orders", label: "Orders", icon: Package },
+  { href: "/admin/orders", label: "Orders", icon: Package, showBadge: true },
   { href: "/admin/coupons", label: "Coupons", icon: Tag },
   { href: "/admin/colors", label: "Colors", icon: Palette },
   { href: "/admin/users", label: "Users", icon: Users },
@@ -23,6 +24,36 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, isAdminOrModerator, isLoading } = useAuth();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  // Fetch pending orders count
+  useEffect(() => {
+    const fetchPendingCount = async () => {
+      const { count } = await supabase
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending_review");
+      setPendingCount(count || 0);
+    };
+
+    fetchPendingCount();
+
+    // Subscribe to real-time changes
+    const channel = supabase
+      .channel("admin-pending-orders")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        () => {
+          fetchPendingCount();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isLoading && (!user || !isAdminOrModerator)) {
@@ -48,7 +79,7 @@ export default function AdminLayout() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              You’re signed in, but this account doesn’t have admin/moderator permission.
+              You're signed in, but this account doesn't have admin/moderator permission.
             </p>
             <div className="flex gap-3">
               <Button variant="outline" onClick={() => navigate("/")}>Back to Home</Button>
@@ -75,12 +106,13 @@ export default function AdminLayout() {
         <nav className="flex-1 p-4 space-y-1">
           {navItems.map((item) => {
             const isActive = location.pathname === item.href;
+            const showRedDot = item.showBadge && pendingCount > 0;
             return (
               <Link
                 key={item.href}
                 to={item.href}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
+                  "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors relative",
                   isActive 
                     ? "bg-primary text-primary-foreground" 
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground"
@@ -88,6 +120,11 @@ export default function AdminLayout() {
               >
                 <item.icon className="w-5 h-5" />
                 {item.label}
+                {showRedDot && (
+                  <span className="absolute right-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-xs font-medium px-1">
+                    {pendingCount}
+                  </span>
+                )}
               </Link>
             );
           })}
