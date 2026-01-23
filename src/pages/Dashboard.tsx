@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -74,6 +74,7 @@ const statusIcons: Record<string, React.ReactNode> = {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, profile, isLoading: authLoading, refreshProfile } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [coupons, setCoupons] = useState<UserCoupon[]>([]);
@@ -87,6 +88,9 @@ export default function Dashboard() {
     phone: "",
     address: "",
   });
+  
+  // Get default tab from URL
+  const defaultTab = searchParams.get("tab") || "orders";
   
   // Payment slip upload
   const [uploadingOrderId, setUploadingOrderId] = useState<string | null>(null);
@@ -382,7 +386,7 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <Tabs defaultValue="orders" className="space-y-6">
+          <Tabs defaultValue={defaultTab} className="space-y-6">
             <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-grid">
               <TabsTrigger value="orders" className="gap-2">
                 <Package className="w-4 h-4" />
