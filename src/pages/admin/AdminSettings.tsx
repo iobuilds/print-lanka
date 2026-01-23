@@ -222,6 +222,7 @@ export default function AdminSettings() {
                       <SelectValue placeholder="Select provider" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="textlk">Text.lk (Sri Lanka)</SelectItem>
                       <SelectItem value="dialog">Dialog (Sri Lanka)</SelectItem>
                       <SelectItem value="mobitel">Mobitel (Sri Lanka)</SelectItem>
                       <SelectItem value="twilio">Twilio (International)</SelectItem>
@@ -232,7 +233,10 @@ export default function AdminSettings() {
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="api-key">API Key / Account SID</Label>
+                    <Label htmlFor="api-key">
+                      {smsConfig.provider === 'textlk' ? 'API Token' : 
+                       smsConfig.provider === 'twilio' ? 'Account SID' : 'API Key'}
+                    </Label>
                     <Input
                       id="api-key"
                       type="password"
@@ -240,22 +244,24 @@ export default function AdminSettings() {
                       onChange={(e) => 
                         setSmsConfig({ ...smsConfig, api_key: e.target.value })
                       }
-                      placeholder="Enter API key"
+                      placeholder={smsConfig.provider === 'textlk' ? 'e.g., 3074|Rr1li91D...' : 'Enter API key'}
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="api-secret">API Secret / Auth Token</Label>
-                    <Input
-                      id="api-secret"
-                      type="password"
-                      value={smsConfig.api_secret}
-                      onChange={(e) => 
-                        setSmsConfig({ ...smsConfig, api_secret: e.target.value })
-                      }
-                      placeholder="Enter API secret"
-                    />
-                  </div>
+                  {smsConfig.provider !== 'textlk' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="api-secret">API Secret / Auth Token</Label>
+                      <Input
+                        id="api-secret"
+                        type="password"
+                        value={smsConfig.api_secret}
+                        onChange={(e) => 
+                          setSmsConfig({ ...smsConfig, api_secret: e.target.value })
+                        }
+                        placeholder="Enter API secret"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -267,7 +273,7 @@ export default function AdminSettings() {
                       onChange={(e) => 
                         setSmsConfig({ ...smsConfig, sender_id: e.target.value })
                       }
-                      placeholder="e.g., Print3D"
+                      placeholder={smsConfig.provider === 'textlk' ? 'e.g., TextLKDemo' : 'e.g., Print3D'}
                     />
                     <p className="text-xs text-muted-foreground">
                       The name shown as the sender

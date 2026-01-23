@@ -77,7 +77,28 @@ serve(async (req) => {
     let smsResult = { success: false, response: '' };
 
     // Send SMS based on provider
-    if (config.provider === 'twilio') {
+    if (config.provider === 'textlk') {
+      // Text.lk (Sri Lanka) SMS API
+      const textlkUrl = 'https://app.text.lk/api/http/sms/send';
+      
+      const response = await fetch(textlkUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          api_token: config.api_key,
+          recipient: phone.replace('+', ''),
+          sender_id: config.sender_id || 'Print3D',
+          type: 'plain',
+          message: message,
+        }),
+      });
+
+      const result = await response.json();
+      smsResult = { success: response.ok && result.status === 'success', response: JSON.stringify(result) };
+    } else if (config.provider === 'twilio') {
       const twilioAccountSid = config.api_key;
       const twilioAuthToken = config.api_secret;
       const twilioFrom = config.sender_id;
