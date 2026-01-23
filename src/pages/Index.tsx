@@ -6,9 +6,9 @@ import { ModelUploadSection } from "@/components/home/ModelUploadSection";
 const Index = () => {
   return (
     <Layout>
-      <HeroSection />
-      <WorkflowSection />
       <ModelUploadSection />
+      <WorkflowSection />
+      <HeroSection />
     </Layout>
   );
 };
