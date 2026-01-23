@@ -1,53 +1,168 @@
+import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatPrice } from "@/lib/constants";
 import { Box, Layers, Palette, Zap } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
-const pricingTiers = [
-  {
-    quality: "Draft",
-    layerHeight: "0.3mm",
-    description: "Fast prints for prototyping",
-    pricePerGram: 15,
-    icon: Zap,
-    color: "from-amber-500 to-orange-600",
-  },
-  {
-    quality: "Normal",
-    layerHeight: "0.2mm",
-    description: "Balanced quality and speed",
-    pricePerGram: 20,
-    icon: Layers,
-    popular: true,
-    color: "from-primary to-teal-600",
-  },
-  {
-    quality: "High",
-    layerHeight: "0.1mm",
-    description: "Maximum detail and smoothness",
-    pricePerGram: 30,
-    icon: Box,
-    color: "from-blue-500 to-indigo-600",
-  },
-];
+interface QualityPricing {
+  draft: number;
+  normal: number;
+  high: number;
+}
 
-const materialPricing = [
-  { name: "PLA", basePrice: 0, description: "Standard material" },
-  { name: "PETG", basePrice: 5, description: "+Rs.5/gram" },
-  { name: "ABS", basePrice: 8, description: "+Rs.8/gram" },
-];
+interface MaterialPricing {
+  pla: number;
+  petg: number;
+  abs: number;
+}
 
-const additionalFees = [
-  { name: "Minimum Order", value: "Rs. 500" },
-  { name: "Color Change", value: "Free (basic colors)" },
-  { name: "Custom Color", value: "Rs. 200 surcharge" },
-  { name: "Rush Order (24h)", value: "+50% of print cost" },
-  { name: "Delivery (Colombo)", value: "Rs. 300" },
-  { name: "Delivery (Island-wide)", value: "Rs. 400 - 600" },
-];
+interface PricingConfig {
+  quality_pricing: QualityPricing;
+  material_surcharge: MaterialPricing;
+  minimum_order: number;
+  custom_color_surcharge: number;
+  rush_order_multiplier: number;
+}
+
+interface DeliveryConfig {
+  colombo_charge: number;
+  island_min: number;
+  island_max: number;
+}
+
+const defaultPricingConfig: PricingConfig = {
+  quality_pricing: { draft: 15, normal: 20, high: 30 },
+  material_surcharge: { pla: 0, petg: 5, abs: 8 },
+  minimum_order: 500,
+  custom_color_surcharge: 200,
+  rush_order_multiplier: 1.5,
+};
+
+const defaultDeliveryConfig: DeliveryConfig = {
+  colombo_charge: 300,
+  island_min: 400,
+  island_max: 600,
+};
 
 export default function Pricing() {
+  const [pricingConfig, setPricingConfig] = useState<PricingConfig>(defaultPricingConfig);
+  const [deliveryConfig, setDeliveryConfig] = useState<DeliveryConfig>(defaultDeliveryConfig);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchPricingConfig();
+  }, []);
+
+  const fetchPricingConfig = async () => {
+    try {
+      const [pricingResult, deliveryResult] = await Promise.all([
+        supabase.from("system_settings").select("value").eq("key", "pricing_config").single(),
+        supabase.from("system_settings").select("value").eq("key", "delivery_config").single(),
+      ]);
+
+      if (pricingResult.data?.value && typeof pricingResult.data.value === 'object') {
+        setPricingConfig(pricingResult.data.value as unknown as PricingConfig);
+      }
+
+      if (deliveryResult.data?.value && typeof deliveryResult.data.value === 'object') {
+        setDeliveryConfig(deliveryResult.data.value as unknown as DeliveryConfig);
+      }
+    } catch (error) {
+      console.error("Error fetching pricing config:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const pricingTiers = [
+    {
+      quality: "Draft",
+      layerHeight: "0.3mm",
+      description: "Fast prints for prototyping",
+      pricePerGram: pricingConfig.quality_pricing.draft,
+      icon: Zap,
+      color: "from-amber-500 to-orange-600",
+    },
+    {
+      quality: "Normal",
+      layerHeight: "0.2mm",
+      description: "Balanced quality and speed",
+      pricePerGram: pricingConfig.quality_pricing.normal,
+      icon: Layers,
+      popular: true,
+      color: "from-primary to-teal-600",
+    },
+    {
+      quality: "High",
+      layerHeight: "0.1mm",
+      description: "Maximum detail and smoothness",
+      pricePerGram: pricingConfig.quality_pricing.high,
+      icon: Box,
+      color: "from-blue-500 to-indigo-600",
+    },
+  ];
+
+  const materialPricing = [
+    { 
+      name: "PLA", 
+      basePrice: pricingConfig.material_surcharge.pla, 
+      description: pricingConfig.material_surcharge.pla === 0 ? "Standard material" : `+Rs.${pricingConfig.material_surcharge.pla}/gram` 
+    },
+    { 
+      name: "PETG", 
+      basePrice: pricingConfig.material_surcharge.petg, 
+      description: `+Rs.${pricingConfig.material_surcharge.petg}/gram` 
+    },
+    { 
+      name: "ABS", 
+      basePrice: pricingConfig.material_surcharge.abs, 
+      description: `+Rs.${pricingConfig.material_surcharge.abs}/gram` 
+    },
+  ];
+
+  const rushPercentage = Math.round((pricingConfig.rush_order_multiplier - 1) * 100);
+
+  const additionalFees = [
+    { name: "Minimum Order", value: formatPrice(pricingConfig.minimum_order) },
+    { name: "Color Change", value: "Free (basic colors)" },
+    { name: "Custom Color", value: `${formatPrice(pricingConfig.custom_color_surcharge)} surcharge` },
+    { name: "Rush Order (24h)", value: `+${rushPercentage}% of print cost` },
+    { name: "Delivery (Colombo)", value: formatPrice(deliveryConfig.colombo_charge) },
+    { name: "Delivery (Island-wide)", value: `${formatPrice(deliveryConfig.island_min)} - ${formatPrice(deliveryConfig.island_max)}` },
+  ];
+
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="py-24 bg-secondary/30">
+          <div className="container mx-auto px-4">
+            <div className="text-center mb-16">
+              <Skeleton className="h-12 w-64 mx-auto mb-4" />
+              <Skeleton className="h-6 w-96 mx-auto" />
+            </div>
+            <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+              {[1, 2, 3].map((i) => (
+                <Card key={i}>
+                  <Skeleton className="h-32 w-full" />
+                  <CardHeader>
+                    <Skeleton className="h-6 w-32" />
+                    <Skeleton className="h-4 w-48" />
+                  </CardHeader>
+                  <CardContent>
+                    <Skeleton className="h-10 w-24" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="py-24 bg-secondary/30">
