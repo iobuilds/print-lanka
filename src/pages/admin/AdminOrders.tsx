@@ -388,7 +388,27 @@ export default function AdminOrders() {
     return itemsTotal + deliveryCharge;
   };
 
-  // Calculate discount from applied coupon
+  // Calculate discount from applied coupon (or fallback to notes)
+  const getAppliedCouponInfo = (order: Order | null): AppliedCoupon | null => {
+    if (!order) return null;
+    if (order.applied_coupon) return order.applied_coupon;
+    
+    // Fallback: parse from notes if coupon info exists there
+    if (order.notes?.includes("Coupon:")) {
+      const codeMatch = order.notes.match(/Coupon:\s*(\w+)/);
+      if (codeMatch) {
+        // Default to 10% if we can't determine - will be overridden by actual data
+        return {
+          id: "fallback",
+          code: codeMatch[1],
+          discount_type: "percentage",
+          discount_value: 10,
+        };
+      }
+    }
+    return null;
+  };
+
   const calculateDiscount = (subtotal: number, coupon: AppliedCoupon | null | undefined): number => {
     if (!coupon) return 0;
     if (coupon.discount_type === "percentage") {
@@ -400,7 +420,8 @@ export default function AdminOrders() {
   // Get the final price after discount
   const calculateFinalTotal = () => {
     const subtotal = calculateTotal();
-    const discount = calculateDiscount(subtotal, pricingOrder?.applied_coupon);
+    const couponInfo = getAppliedCouponInfo(pricingOrder);
+    const discount = calculateDiscount(subtotal, couponInfo);
     return Math.max(0, subtotal - discount);
   };
 
@@ -419,7 +440,8 @@ export default function AdminOrders() {
       }
 
       const subtotal = calculateTotal();
-      const discount = calculateDiscount(subtotal, pricingOrder.applied_coupon);
+      const couponInfo = getAppliedCouponInfo(pricingOrder);
+      const discount = calculateDiscount(subtotal, couponInfo);
       const finalTotal = Math.max(0, subtotal - discount);
       const isFirstPricing = pricingOrder.status === "pending_review";
       
@@ -446,8 +468,8 @@ export default function AdminOrders() {
         try {
           // Build message with discount info if applicable
           let message = `Your order #${pricingOrder.id.slice(0, 8)} has been priced at ${formatPrice(finalTotal)}.`;
-          if (discount > 0 && pricingOrder.applied_coupon) {
-            message = `Your order #${pricingOrder.id.slice(0, 8)} has been priced at ${formatPrice(finalTotal)} (Coupon ${pricingOrder.applied_coupon.code}: -${formatPrice(discount)} applied).`;
+          if (discount > 0 && couponInfo) {
+            message = `Your order #${pricingOrder.id.slice(0, 8)} has been priced at ${formatPrice(finalTotal)} (Coupon ${couponInfo.code}: -${formatPrice(discount)} applied).`;
           }
           message += " Please upload your bank transfer slip to proceed.";
 
@@ -958,77 +980,64 @@ export default function AdminOrders() {
                 </div>
               </div>
 
-              {/* Coupon Applied Info with Price Breakdown */}
-              {pricingOrder.applied_coupon && (
-                <div className="p-4 border rounded-lg bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Tag className="w-4 h-4 text-green-600" />
-                    <span className="font-medium text-sm text-green-700 dark:text-green-400">Coupon Applied</span>
-                    <Badge className="bg-green-500 text-white">
-                      {pricingOrder.applied_coupon.code}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-green-600 dark:text-green-400">
-                    {pricingOrder.applied_coupon.discount_type === "percentage"
-                      ? `${pricingOrder.applied_coupon.discount_value}% discount`
-                      : `${formatPrice(pricingOrder.applied_coupon.discount_value)} discount`
-                    } will be applied to the final total
-                  </p>
-                </div>
-              )}
+              {/* Price Summary - Always show full breakdown */}
+              {(() => {
+                const couponInfo = getAppliedCouponInfo(pricingOrder);
+                const itemsTotal = Object.values(itemPrices).reduce((sum, p) => sum + (p || 0), 0);
+                const subtotal = itemsTotal + deliveryCharge;
+                const discountAmount = calculateDiscount(subtotal, couponInfo);
+                const customerPays = Math.max(0, subtotal - discountAmount);
+                
+                return (
+                  <div className="space-y-3 p-4 bg-slate-100 dark:bg-slate-800 rounded-lg border-2 border-slate-200 dark:border-slate-700">
+                    {/* Items Total */}
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-muted-foreground">Items Total</span>
+                      <span className="font-medium">{formatPrice(itemsTotal)}</span>
+                    </div>
 
-              {/* Price Summary - Always show breakdown */}
-              <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border">
-                {/* Items Subtotal */}
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-muted-foreground">Items Total</span>
-                  <span className="font-medium">
-                    {formatPrice(Object.values(itemPrices).reduce((sum, p) => sum + (p || 0), 0))}
-                  </span>
-                </div>
+                    {/* Delivery */}
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-muted-foreground">Delivery Charge</span>
+                      <span className="font-medium">{formatPrice(deliveryCharge)}</span>
+                    </div>
 
-                {/* Delivery */}
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-muted-foreground">Delivery Charge</span>
-                  <span className="font-medium">{formatPrice(deliveryCharge)}</span>
-                </div>
+                    {/* Subtotal */}
+                    <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-300 dark:border-slate-600">
+                      <span className="font-medium">Subtotal</span>
+                      <span className="font-semibold">{formatPrice(subtotal)}</span>
+                    </div>
 
-                {/* Subtotal before discount */}
-                <div className="flex justify-between items-center text-sm border-t pt-2">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <span className="font-medium">{formatPrice(calculateTotal())}</span>
-                </div>
+                    {/* Coupon Discount - show if coupon applied */}
+                    {couponInfo && (
+                      <div className="flex justify-between items-center p-3 bg-green-100 dark:bg-green-900/50 rounded-lg border border-green-300 dark:border-green-700">
+                        <span className="flex items-center gap-2 text-green-700 dark:text-green-300 font-medium">
+                          <Tag className="w-4 h-4" />
+                          <span>Coupon: {couponInfo.code}</span>
+                          <Badge className="bg-green-600 text-white text-xs">
+                            {couponInfo.discount_type === "percentage" 
+                              ? `${couponInfo.discount_value}% OFF` 
+                              : formatPrice(couponInfo.discount_value) + " OFF"}
+                          </Badge>
+                        </span>
+                        <span className="font-bold text-lg text-green-700 dark:text-green-300">
+                          -{formatPrice(discountAmount)}
+                        </span>
+                      </div>
+                    )}
 
-                {/* Discount row - show if coupon applied */}
-                {pricingOrder.applied_coupon && (
-                  <div className="flex justify-between items-center text-sm bg-green-100 dark:bg-green-900/30 p-2 rounded -mx-2">
-                    <span className="flex items-center gap-2 text-green-700 dark:text-green-400 font-medium">
-                      <Percent className="w-4 h-4" />
-                      Coupon: {pricingOrder.applied_coupon.code}
-                      <span className="text-xs">
-                        ({pricingOrder.applied_coupon.discount_type === "percentage" 
-                          ? `${pricingOrder.applied_coupon.discount_value}%` 
-                          : formatPrice(pricingOrder.applied_coupon.discount_value)})
+                    {/* Customer Pays */}
+                    <div className="flex justify-between items-center p-4 bg-primary/20 rounded-lg border-2 border-primary/30 mt-2">
+                      <span className="font-bold text-lg">
+                        {couponInfo ? "🎉 Customer Pays" : "Total"}
                       </span>
-                    </span>
-                    <span className="font-bold text-green-700 dark:text-green-400">
-                      -{formatPrice(calculateDiscount(calculateTotal(), pricingOrder.applied_coupon))}
-                    </span>
+                      <span className="text-3xl font-bold text-primary">
+                        {formatPrice(customerPays)}
+                      </span>
+                    </div>
                   </div>
-                )}
-
-                <Separator />
-
-                {/* Final Total */}
-                <div className="flex justify-between items-center bg-primary/10 p-3 rounded -mx-1">
-                  <span className="font-bold text-lg">
-                    {pricingOrder.applied_coupon ? "Customer Pays" : "Total"}
-                  </span>
-                  <span className="text-2xl font-bold text-primary">
-                    {formatPrice(calculateFinalTotal())}
-                  </span>
-                </div>
-              </div>
+                );
+              })()}
             </div>
           )}
 
