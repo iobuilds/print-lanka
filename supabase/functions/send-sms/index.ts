@@ -76,10 +76,27 @@ serve(async (req) => {
 
     let smsResult = { success: false, response: '' };
 
+    // Format phone number to Sri Lankan international format
+    const formatSriLankanPhone = (phoneNum: string): string => {
+      let cleaned = phoneNum.replace(/[^0-9]/g, '');
+      // If starts with 0, replace with 94
+      if (cleaned.startsWith('0')) {
+        cleaned = '94' + cleaned.substring(1);
+      }
+      // If doesn't start with 94, add it
+      if (!cleaned.startsWith('94')) {
+        cleaned = '94' + cleaned;
+      }
+      return cleaned;
+    };
+
     // Send SMS based on provider
     if (config.provider === 'textlk') {
       // Text.lk (Sri Lanka) SMS API
       const textlkUrl = 'https://app.text.lk/api/http/sms/send';
+      const formattedPhone = formatSriLankanPhone(phone);
+      
+      console.log('Sending SMS to:', formattedPhone, 'Message:', message.substring(0, 50) + '...');
       
       const response = await fetch(textlkUrl, {
         method: 'POST',
@@ -89,7 +106,7 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           api_token: config.api_key,
-          recipient: phone.replace('+', ''),
+          recipient: formattedPhone,
           sender_id: config.sender_id || 'Print3D',
           type: 'plain',
           message: message,
@@ -97,6 +114,7 @@ serve(async (req) => {
       });
 
       const result = await response.json();
+      console.log('Text.lk response:', JSON.stringify(result));
       smsResult = { success: response.ok && result.status === 'success', response: JSON.stringify(result) };
     } else if (config.provider === 'twilio') {
       const twilioAccountSid = config.api_key;
