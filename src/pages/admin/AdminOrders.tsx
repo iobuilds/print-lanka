@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, ChevronDown, ChevronUp, DollarSign, Save, Send, Eye, FileImage } from "lucide-react";
+import { Loader2, ChevronDown, ChevronUp, DollarSign, Send, FileImage } from "lucide-react";
 import { formatPrice, ORDER_STATUSES } from "@/lib/constants";
 import { toast } from "sonner";
 
@@ -32,6 +32,13 @@ interface PaymentSlip {
   uploaded_at: string;
 }
 
+interface Profile {
+  first_name: string;
+  last_name: string;
+  phone: string;
+  address: string;
+}
+
 interface Order {
   id: string;
   status: string;
@@ -40,12 +47,7 @@ interface Order {
   created_at: string;
   notes: string | null;
   user_id: string;
-  profile: {
-    first_name: string;
-    last_name: string;
-    phone: string;
-    address: string;
-  } | null;
+  profile: Profile | null;
   order_items: OrderItem[];
   payment_slips: PaymentSlip[];
 }
@@ -62,52 +64,83 @@ export default function AdminOrders() {
   const [deliveryCharge, setDeliveryCharge] = useState<number>(350);
   const [isSavingPrices, setIsSavingPrices] = useState(false);
   const [viewingSlip, setViewingSlip] = useState<string | null>(null);
+  const [viewingSlipOrderId, setViewingSlipOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchOrders();
   }, []);
 
   const fetchOrders = async () => {
-    const { data, error } = await supabase
-      .from("orders")
-      .select(`
-        *,
-        profile:profiles!orders_user_id_fkey (
-          first_name,
-          last_name,
-          phone,
-          address
-        ),
-        order_items (
-          id,
-          file_name,
-          file_path,
-          quantity,
-          color,
-          material,
-          quality,
-          infill_percentage,
-          price
-        ),
-        payment_slips (
-          id,
-          file_name,
-          file_path,
-          verified,
-          uploaded_at
-        )
-      `)
-      .order("created_at", { ascending: false });
+    try {
+      // Fetch orders with order items and payment slips
+      const { data: ordersData, error: ordersError } = await supabase
+        .from("orders")
+        .select(`
+          *,
+          order_items (
+            id,
+            file_name,
+            file_path,
+            quantity,
+            color,
+            material,
+            quality,
+            infill_percentage,
+            price
+          ),
+          payment_slips (
+            id,
+            file_name,
+            file_path,
+            verified,
+            uploaded_at
+          )
+        `)
+        .order("created_at", { ascending: false });
 
-    if (!error && data) {
-      const mappedOrders = data.map((order: any) => ({
+      if (ordersError) {
+        console.error("Error fetching orders:", ordersError);
+        toast.error("Failed to load orders");
+        setIsLoading(false);
+        return;
+      }
+
+      // Fetch profiles separately and map them
+      const userIds = [...new Set(ordersData?.map(o => o.user_id) || [])];
+      
+      const { data: profilesData, error: profilesError } = await supabase
+        .from("profiles")
+        .select("user_id, first_name, last_name, phone, address")
+        .in("user_id", userIds);
+
+      if (profilesError) {
+        console.error("Error fetching profiles:", profilesError);
+      }
+
+      const profileMap = new Map<string, Profile>();
+      profilesData?.forEach(p => {
+        profileMap.set(p.user_id, {
+          first_name: p.first_name,
+          last_name: p.last_name,
+          phone: p.phone,
+          address: p.address,
+        });
+      });
+
+      const mappedOrders: Order[] = (ordersData || []).map((order: any) => ({
         ...order,
-        profile: Array.isArray(order.profile) ? order.profile[0] : order.profile,
-        payment_slips: order.payment_slips || []
+        profile: profileMap.get(order.user_id) || null,
+        payment_slips: order.payment_slips || [],
+        order_items: order.order_items || [],
       }));
+
       setOrders(mappedOrders);
+    } catch (error) {
+      console.error("Error in fetchOrders:", error);
+      toast.error("Failed to load orders");
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleStatusChange = async (orderId: string, newStatus: string, order: Order) => {
@@ -226,13 +259,14 @@ export default function AdminOrders() {
     }
   };
 
-  const handleViewPaymentSlip = async (filePath: string) => {
+  const handleViewPaymentSlip = async (filePath: string, orderId: string) => {
     const { data } = await supabase.storage
       .from("payment-slips")
       .createSignedUrl(filePath, 300);
 
     if (data?.signedUrl) {
       setViewingSlip(data.signedUrl);
+      setViewingSlipOrderId(orderId);
     } else {
       toast.error("Failed to load payment slip");
     }
@@ -280,6 +314,7 @@ export default function AdminOrders() {
       }
 
       setViewingSlip(null);
+      setViewingSlipOrderId(null);
       fetchOrders();
       toast.success(approved ? "Payment approved" : "Payment rejected");
     } catch (error: any) {
@@ -363,8 +398,8 @@ export default function AdminOrders() {
               </TableHeader>
               <TableBody>
                 {filteredOrders.map((order) => (
-                  <>
-                    <TableRow key={order.id}>
+                  <Fragment key={order.id}>
+                    <TableRow>
                       <TableCell>
                         <Button
                           variant="ghost"
@@ -395,7 +430,19 @@ export default function AdminOrders() {
                       </TableCell>
                       <TableCell>{order.order_items.length} items</TableCell>
                       <TableCell>
-                        {order.total_price ? formatPrice(order.total_price) : (
+                        {order.total_price ? (
+                          <div className="flex items-center gap-2">
+                            <span>{formatPrice(order.total_price)}</span>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2"
+                              onClick={() => openPricingDialog(order)}
+                            >
+                              <DollarSign className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ) : (
                           <Button
                             size="sm"
                             variant="outline"
@@ -413,7 +460,7 @@ export default function AdminOrders() {
                             size="sm"
                             variant="outline"
                             className="gap-1"
-                            onClick={() => handleViewPaymentSlip(order.payment_slips[0].file_path)}
+                            onClick={() => handleViewPaymentSlip(order.payment_slips[0].file_path, order.id)}
                           >
                             <FileImage className="w-3 h-3" />
                             View Slip
@@ -503,7 +550,7 @@ export default function AdminOrders() {
                         </TableCell>
                       </TableRow>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </TableBody>
             </Table>
@@ -590,7 +637,7 @@ export default function AdminOrders() {
       </Dialog>
 
       {/* Payment Slip Viewer */}
-      <Dialog open={!!viewingSlip} onOpenChange={() => setViewingSlip(null)}>
+      <Dialog open={!!viewingSlip} onOpenChange={() => { setViewingSlip(null); setViewingSlipOrderId(null); }}>
         <DialogContent className="max-w-3xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>Payment Slip</DialogTitle>
@@ -612,10 +659,8 @@ export default function AdminOrders() {
             <Button 
               variant="destructive" 
               onClick={() => {
-                const order = orders.find(o => 
-                  o.payment_slips.some(s => viewingSlip?.includes(s.file_path.split('/').pop() || ''))
-                );
-                if (order) {
+                const order = orders.find(o => o.id === viewingSlipOrderId);
+                if (order && order.payment_slips.length > 0) {
                   handleVerifyPayment(order.id, order.payment_slips[0].id, false);
                 }
               }}
@@ -624,10 +669,8 @@ export default function AdminOrders() {
             </Button>
             <Button 
               onClick={() => {
-                const order = orders.find(o => 
-                  o.payment_slips.some(s => viewingSlip?.includes(s.file_path.split('/').pop() || ''))
-                );
-                if (order) {
+                const order = orders.find(o => o.id === viewingSlipOrderId);
+                if (order && order.payment_slips.length > 0) {
                   handleVerifyPayment(order.id, order.payment_slips[0].id, true);
                 }
               }}
