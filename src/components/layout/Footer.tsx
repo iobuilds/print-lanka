@@ -1,11 +1,11 @@
 import { Link } from "react-router-dom";
-import { Box, Mail, Phone, MapPin } from "lucide-react";
+import { Box, Mail, MapPin } from "lucide-react";
 
 export function Footer() {
   return (
     <footer className="bg-dark-gradient text-white">
       <div className="container mx-auto px-4 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {/* Brand */}
           <div className="space-y-4">
             <Link to="/" className="flex items-center gap-2">
@@ -13,11 +13,11 @@ export function Footer() {
                 <Box className="w-6 h-6 text-primary-foreground" />
               </div>
               <span className="font-display font-bold text-xl">
-                Print3D Lanka
+                IO Builds LLC
               </span>
             </Link>
             <p className="text-gray-400 text-sm">
-              Sri Lanka's premier 3D printing service. From prototype to production,
+              Professional 3D printing services. From prototype to production,
               we bring your ideas to life.
             </p>
           </div>
@@ -37,25 +37,10 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link to="/upload" className="hover:text-white transition-colors">
-                  Upload Model
-                </Link>
-              </li>
-              <li>
-                <Link to="/orders" className="hover:text-white transition-colors">
+                <Link to="/dashboard" className="hover:text-white transition-colors">
                   My Orders
                 </Link>
               </li>
-            </ul>
-          </div>
-
-          {/* Materials */}
-          <div>
-            <h4 className="font-display font-semibold mb-4">Materials</h4>
-            <ul className="space-y-2 text-gray-400">
-              <li>PLA - Standard</li>
-              <li>PETG - Strong</li>
-              <li>ABS - Industrial</li>
             </ul>
           </div>
 
@@ -64,33 +49,37 @@ export function Footer() {
             <h4 className="font-display font-semibold mb-4">Contact Us</h4>
             <ul className="space-y-3 text-gray-400">
               <li className="flex items-center gap-2">
-                <Phone className="w-4 h-4 text-primary" />
-                <span>+94 77 123 4567</span>
-              </li>
-              <li className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-primary" />
-                <span>info@print3dlanka.lk</span>
+                <a href="mailto:official.iobuilds@gmail.com" className="hover:text-white transition-colors">
+                  official.iobuilds@gmail.com
+                </a>
               </li>
               <li className="flex items-start gap-2">
                 <MapPin className="w-4 h-4 text-primary mt-1" />
-                <span>123 Innovation Drive, Colombo, Sri Lanka</span>
+                <span>1001 S. Main St., STE 500, Kalispell, MT 59901, United States</span>
               </li>
             </ul>
           </div>
         </div>
 
-        <div className="border-t border-white/10 mt-8 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
+        {/* Policy Links */}
+        <div className="border-t border-white/10 mt-8 pt-6 flex justify-center gap-6 text-gray-400 text-sm">
+          <Link to="/privacy" className="hover:text-white transition-colors">
+            Privacy Policy
+          </Link>
+          <Link to="/terms" className="hover:text-white transition-colors">
+            Terms & Conditions
+          </Link>
+          <Link to="/refund" className="hover:text-white transition-colors">
+            Refund Policy
+          </Link>
+        </div>
+
+        {/* Copyright */}
+        <div className="mt-6 text-center">
           <p className="text-gray-400 text-sm">
-            © {new Date().getFullYear()} Print3D Lanka. All rights reserved.
+            © 2026 IO Builds LLC. All rights reserved.
           </p>
-          <div className="flex gap-4 text-gray-400 text-sm">
-            <Link to="/privacy" className="hover:text-white transition-colors">
-              Privacy Policy
-            </Link>
-            <Link to="/terms" className="hover:text-white transition-colors">
-              Terms of Service
-            </Link>
-          </div>
         </div>
       </div>
     </footer>
