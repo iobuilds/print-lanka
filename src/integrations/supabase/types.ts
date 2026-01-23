@@ -281,6 +281,7 @@ export type Database = {
           rejection_reason: string | null
           status: Database["public"]["Enums"]["order_status"]
           total_price: number | null
+          tracking_number: string | null
           updated_at: string
           user_id: string
         }
@@ -295,6 +296,7 @@ export type Database = {
           rejection_reason?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           total_price?: number | null
+          tracking_number?: string | null
           updated_at?: string
           user_id: string
         }
@@ -309,6 +311,7 @@ export type Database = {
           rejection_reason?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           total_price?: number | null
+          tracking_number?: string | null
           updated_at?: string
           user_id?: string
         }
