@@ -1,14 +1,13 @@
 import { useState, useCallback, useRef, Suspense, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Stage, Center } from "@react-three/drei";
-import { Upload, FileUp, X, Box, RotateCcw, ZoomIn, Minus, Plus, ChevronRight, Tag, Check, Loader2 } from "lucide-react";
+import { Upload, FileUp, X, Box, RotateCcw, ZoomIn, Minus, Plus, ChevronRight, Tag, Check, Percent } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { MATERIALS, QUALITY_PRESETS } from "@/lib/constants";
@@ -37,10 +36,16 @@ interface AvailableColor {
   hex_value: string;
 }
 
-interface AppliedCoupon {
-  code: string;
-  discount_type: string;
-  discount_value: number;
+interface UserCoupon {
+  id: string;
+  coupon_id: string;
+  is_used: boolean;
+  coupon: {
+    code: string;
+    discount_type: string;
+    discount_value: number;
+    valid_until: string | null;
+  };
 }
 
 const defaultConfig: ModelConfig = {
@@ -88,10 +93,8 @@ export function ModelUploadSection() {
   const [activeModel, setActiveModel] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [availableColors, setAvailableColors] = useState<AvailableColor[]>([]);
-  const [couponCode, setCouponCode] = useState("");
-  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
-  const [couponError, setCouponError] = useState("");
-  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
+  const [userCoupons, setUserCoupons] = useState<UserCoupon[]>([]);
+  const [selectedCouponId, setSelectedCouponId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -112,46 +115,46 @@ export function ModelUploadSection() {
     fetchColors();
   }, []);
 
-  const validateCoupon = async () => {
-    if (!couponCode.trim()) return;
-    
-    setIsValidatingCoupon(true);
-    setCouponError("");
-    
-    try {
-      const { data, error } = await supabase
-        .from("coupons")
-        .select("code, discount_type, discount_value, min_order_value, max_uses, current_uses")
-        .eq("code", couponCode.trim().toUpperCase())
-        .eq("is_active", true)
-        .single();
-      
-      if (error || !data) {
-        setCouponError("Invalid coupon code");
-        setAppliedCoupon(null);
-      } else if (data.max_uses && data.current_uses >= data.max_uses) {
-        setCouponError("Coupon has reached maximum uses");
-        setAppliedCoupon(null);
-      } else {
-        setAppliedCoupon({
-          code: data.code,
-          discount_type: data.discount_type,
-          discount_value: Number(data.discount_value)
-        });
-        setCouponError("");
+  // Fetch user's available coupons
+  useEffect(() => {
+    const fetchUserCoupons = async () => {
+      if (!user) {
+        setUserCoupons([]);
+        return;
       }
-    } catch {
-      setCouponError("Failed to validate coupon");
-    } finally {
-      setIsValidatingCoupon(false);
-    }
-  };
 
-  const removeCoupon = () => {
-    setAppliedCoupon(null);
-    setCouponCode("");
-    setCouponError("");
-  };
+      const { data } = await supabase
+        .from("user_coupons")
+        .select(`
+          id,
+          coupon_id,
+          is_used,
+          coupon:coupons(code, discount_type, discount_value, valid_until)
+        `)
+        .eq("user_id", user.id)
+        .eq("is_used", false);
+      
+      if (data) {
+        // Filter out expired coupons and transform data
+        const validCoupons = data
+          .filter((uc: any) => {
+            if (!uc.coupon) return false;
+            if (!uc.coupon.valid_until) return true;
+            return new Date(uc.coupon.valid_until) > new Date();
+          })
+          .map((uc: any) => ({
+            id: uc.id,
+            coupon_id: uc.coupon_id,
+            is_used: uc.is_used,
+            coupon: uc.coupon
+          }));
+        setUserCoupons(validCoupons);
+      }
+    };
+    fetchUserCoupons();
+  }, [user]);
+
+  const selectedCoupon = userCoupons.find(uc => uc.id === selectedCouponId);
 
   const parseSTL = useCallback((arrayBuffer: ArrayBuffer): THREE.BufferGeometry => {
     const geometry = new THREE.BufferGeometry();
@@ -264,10 +267,17 @@ export function ModelUploadSection() {
   };
 
   const handleSubmitOrder = () => {
+    const couponData = selectedCoupon ? {
+      user_coupon_id: selectedCoupon.id,
+      code: selectedCoupon.coupon.code,
+      discount_type: selectedCoupon.coupon.discount_type,
+      discount_value: selectedCoupon.coupon.discount_value
+    } : null;
+
     if (user) {
-      navigate("/checkout", { state: { models: uploadedModels, coupon: appliedCoupon } });
+      navigate("/checkout", { state: { models: uploadedModels, coupon: couponData } });
     } else {
-      navigate("/register", { state: { models: uploadedModels, coupon: appliedCoupon } });
+      navigate("/register", { state: { models: uploadedModels, coupon: couponData } });
     }
   };
 
@@ -280,47 +290,44 @@ export function ModelUploadSection() {
   return (
     <section className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 py-6" id="upload">
       <div className="container mx-auto px-4 h-full">
-        {/* Coupon Code Section - Top */}
-        <Card className="mb-4">
-          <CardContent className="py-3 px-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <Tag className="w-5 h-5 text-primary" />
-              <span className="font-medium text-sm">Have a coupon?</span>
-              {appliedCoupon ? (
-                <div className="flex items-center gap-2 bg-success/10 text-success px-3 py-1.5 rounded-lg">
-                  <Check className="w-4 h-4" />
-                  <span className="font-medium">{appliedCoupon.code}</span>
-                  <span className="text-sm">
-                    ({appliedCoupon.discount_type === 'percentage' 
-                      ? `${appliedCoupon.discount_value}% off` 
-                      : `LKR ${appliedCoupon.discount_value} off`})
+        {/* User's Available Coupons - Top */}
+        {user && userCoupons.length > 0 && (
+          <Card className="mb-4">
+            <CardContent className="py-3 px-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Tag className="w-5 h-5 text-primary" />
+                <span className="font-medium text-sm">Your Coupons:</span>
+                <div className="flex flex-wrap gap-2">
+                  {userCoupons.map((uc) => (
+                    <button
+                      key={uc.id}
+                      onClick={() => setSelectedCouponId(selectedCouponId === uc.id ? null : uc.id)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${
+                        selectedCouponId === uc.id
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-secondary border-border hover:border-primary/50"
+                      }`}
+                    >
+                      {selectedCouponId === uc.id && <Check className="w-4 h-4" />}
+                      <Percent className="w-3 h-3" />
+                      <span className="font-medium text-sm">{uc.coupon.code}</span>
+                      <span className="text-xs opacity-80">
+                        {uc.coupon.discount_type === 'percentage' 
+                          ? `${uc.coupon.discount_value}% off` 
+                          : `LKR ${uc.coupon.discount_value} off`}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {selectedCoupon && (
+                  <span className="text-sm text-success font-medium ml-auto">
+                    Coupon applied!
                   </span>
-                  <button onClick={removeCoupon} className="ml-1 hover:text-destructive">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 flex-1 max-w-md">
-                  <Input
-                    placeholder="Enter coupon code"
-                    value={couponCode}
-                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                    className="h-9 bg-background"
-                    onKeyDown={(e) => e.key === 'Enter' && validateCoupon()}
-                  />
-                  <Button 
-                    size="sm" 
-                    onClick={validateCoupon}
-                    disabled={isValidatingCoupon || !couponCode.trim()}
-                  >
-                    {isValidatingCoupon ? <Loader2 className="w-4 h-4 animate-spin" /> : "Apply"}
-                  </Button>
-                </div>
-              )}
-              {couponError && <span className="text-sm text-destructive">{couponError}</span>}
-            </div>
-          </CardContent>
-        </Card>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid lg:grid-cols-2 gap-6 h-full">
           {/* Left Side - Drag & Drop + 3D Viewer */}
