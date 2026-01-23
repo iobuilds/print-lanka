@@ -190,6 +190,7 @@ export default function Checkout() {
             is_used: true,
             used_at: new Date().toISOString(),
             used_on_order_id: order.id,
+            use_count: 1,
           })
           .eq("id", selectedCoupon.id);
       }
