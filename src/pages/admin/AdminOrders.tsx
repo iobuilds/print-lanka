@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment } from "react";
+import { useState, useEffect, Fragment, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, ChevronDown, ChevronUp, DollarSign, Send, FileImage } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { 
+  Loader2, ChevronDown, ChevronUp, DollarSign, Send, FileImage, 
+  Search, Download, Eye, RefreshCw, Bell, MapPin, Phone, Mail,
+  Package, Calendar, FileText
+} from "lucide-react";
 import { formatPrice, ORDER_STATUSES } from "@/lib/constants";
 import { toast } from "sonner";
 
@@ -22,6 +28,7 @@ interface OrderItem {
   quality: string;
   infill_percentage: number;
   price: number | null;
+  notes: string | null;
 }
 
 interface PaymentSlip {
@@ -37,6 +44,7 @@ interface Profile {
   last_name: string;
   phone: string;
   address: string;
+  email: string | null;
 }
 
 interface Order {
@@ -45,8 +53,11 @@ interface Order {
   total_price: number | null;
   delivery_charge: number | null;
   created_at: string;
+  updated_at: string;
   notes: string | null;
   user_id: string;
+  priced_at: string | null;
+  paid_at: string | null;
   profile: Profile | null;
   order_items: OrderItem[];
   payment_slips: PaymentSlip[];
@@ -59,20 +70,70 @@ export default function AdminOrders() {
   const [isLoading, setIsLoading] = useState(true);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [pricingOrder, setPricingOrder] = useState<Order | null>(null);
   const [itemPrices, setItemPrices] = useState<Record<string, number>>({});
   const [deliveryCharge, setDeliveryCharge] = useState<number>(350);
   const [isSavingPrices, setIsSavingPrices] = useState(false);
   const [viewingSlip, setViewingSlip] = useState<string | null>(null);
   const [viewingSlipOrderId, setViewingSlipOrderId] = useState<string | null>(null);
+  const [detailsOrder, setDetailsOrder] = useState<Order | null>(null);
+  const [isDownloading, setIsDownloading] = useState<string | null>(null);
 
   useEffect(() => {
     fetchOrders();
+
+    // Set up real-time subscription
+    const channel = supabase
+      .channel('admin-orders')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders',
+        },
+        (payload) => {
+          console.log('Order change detected:', payload);
+          // Show notification for new orders
+          if (payload.eventType === 'INSERT') {
+            toast.info("New order received!", {
+              icon: <Bell className="w-4 h-4" />,
+              action: {
+                label: "View",
+                onClick: () => fetchOrders(),
+              },
+            });
+          }
+          fetchOrders();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'payment_slips',
+        },
+        (payload) => {
+          console.log('Payment slip change detected:', payload);
+          if (payload.eventType === 'INSERT') {
+            toast.info("New payment slip uploaded!", {
+              icon: <FileImage className="w-4 h-4" />,
+            });
+          }
+          fetchOrders();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchOrders = async () => {
     try {
-      // Fetch orders with order items and payment slips
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
         .select(`
@@ -86,7 +147,8 @@ export default function AdminOrders() {
             material,
             quality,
             infill_percentage,
-            price
+            price,
+            notes
           ),
           payment_slips (
             id,
@@ -105,12 +167,11 @@ export default function AdminOrders() {
         return;
       }
 
-      // Fetch profiles separately and map them
       const userIds = [...new Set(ordersData?.map(o => o.user_id) || [])];
       
       const { data: profilesData, error: profilesError } = await supabase
         .from("profiles")
-        .select("user_id, first_name, last_name, phone, address")
+        .select("user_id, first_name, last_name, phone, address, email")
         .in("user_id", userIds);
 
       if (profilesError) {
@@ -124,6 +185,7 @@ export default function AdminOrders() {
           last_name: p.last_name,
           phone: p.phone,
           address: p.address,
+          email: p.email,
         });
       });
 
@@ -143,6 +205,34 @@ export default function AdminOrders() {
     }
   };
 
+  // Filter and search orders
+  const filteredOrders = useMemo(() => {
+    let result = orders;
+
+    // Filter by status
+    if (filterStatus !== "all") {
+      result = result.filter(o => o.status === filterStatus);
+    }
+
+    // Search by order ID, customer name, phone, or email
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      result = result.filter(order => {
+        const orderId = order.id.toLowerCase();
+        const customerName = `${order.profile?.first_name || ''} ${order.profile?.last_name || ''}`.toLowerCase();
+        const phone = order.profile?.phone?.toLowerCase() || '';
+        const email = order.profile?.email?.toLowerCase() || '';
+        
+        return orderId.includes(query) || 
+               customerName.includes(query) || 
+               phone.includes(query) ||
+               email.includes(query);
+      });
+    }
+
+    return result;
+  }, [orders, filterStatus, searchQuery]);
+
   const handleStatusChange = async (orderId: string, newStatus: string, order: Order) => {
     const { error } = await supabase
       .from("orders")
@@ -150,7 +240,6 @@ export default function AdminOrders() {
       .eq("id", orderId);
 
     if (!error) {
-      // Send SMS notification for key status changes
       const notifyStatuses = [
         "priced_awaiting_payment",
         "payment_approved",
@@ -182,7 +271,6 @@ export default function AdminOrders() {
         }
       }
 
-      fetchOrders();
       toast.success("Order status updated");
     } else {
       toast.error("Failed to update status");
@@ -209,7 +297,6 @@ export default function AdminOrders() {
 
     setIsSavingPrices(true);
     try {
-      // Update each order item price
       for (const [itemId, price] of Object.entries(itemPrices)) {
         const { error } = await supabase
           .from("order_items")
@@ -219,7 +306,6 @@ export default function AdminOrders() {
         if (error) throw error;
       }
 
-      // Update order total and status
       const total = calculateTotal();
       const { error: orderError } = await supabase
         .from("orders")
@@ -233,13 +319,12 @@ export default function AdminOrders() {
 
       if (orderError) throw orderError;
 
-      // Send SMS notification
       if (pricingOrder.profile?.phone) {
         try {
           await supabase.functions.invoke("send-sms", {
             body: {
               phone: pricingOrder.profile.phone,
-              message: `Your order #${pricingOrder.id.slice(0, 8)} has been priced at ${formatPrice(total)}. Please upload your bank transfer slip to proceed. View your order at your dashboard.`,
+              message: `Your order #${pricingOrder.id.slice(0, 8)} has been priced at ${formatPrice(total)}. Please upload your bank transfer slip to proceed.`,
               order_id: pricingOrder.id,
               user_id: pricingOrder.user_id,
             },
@@ -250,7 +335,6 @@ export default function AdminOrders() {
       }
 
       setPricingOrder(null);
-      fetchOrders();
       toast.success("Prices saved and customer notified");
     } catch (error: any) {
       toast.error(error.message || "Failed to save prices");
@@ -274,7 +358,6 @@ export default function AdminOrders() {
 
   const handleVerifyPayment = async (orderId: string, slipId: string, approved: boolean) => {
     try {
-      // Update payment slip
       await supabase
         .from("payment_slips")
         .update({
@@ -283,7 +366,6 @@ export default function AdminOrders() {
         })
         .eq("id", slipId);
 
-      // Update order status
       await supabase
         .from("orders")
         .update({
@@ -315,16 +397,39 @@ export default function AdminOrders() {
 
       setViewingSlip(null);
       setViewingSlipOrderId(null);
-      fetchOrders();
       toast.success(approved ? "Payment approved" : "Payment rejected");
     } catch (error: any) {
       toast.error(error.message || "Failed to verify payment");
     }
   };
 
-  const filteredOrders = filterStatus === "all" 
-    ? orders 
-    : orders.filter(o => o.status === filterStatus);
+  const handleDownloadFile = async (filePath: string, fileName: string) => {
+    setIsDownloading(filePath);
+    try {
+      const { data, error } = await supabase.storage
+        .from("models")
+        .download(filePath);
+
+      if (error) throw error;
+
+      // Create download link
+      const url = URL.createObjectURL(data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success(`Downloaded ${fileName}`);
+    } catch (error: any) {
+      console.error("Download error:", error);
+      toast.error("Failed to download file");
+    } finally {
+      setIsDownloading(null);
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     const statusInfo = ORDER_STATUSES[status as keyof typeof ORDER_STATUSES];
@@ -336,7 +441,7 @@ export default function AdminOrders() {
         variant="outline" 
         className={
           isError ? "border-destructive text-destructive" :
-          isSuccess ? "border-success text-success" :
+          isSuccess ? "border-green-500 text-green-600" :
           "border-primary text-primary"
         }
       >
@@ -352,20 +457,44 @@ export default function AdminOrders() {
           <h1 className="font-display text-3xl font-bold">Orders</h1>
           <p className="text-muted-foreground">Manage customer orders and pricing</p>
         </div>
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Filter by status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Orders</SelectItem>
-            {statusOptions.map((status) => (
-              <SelectItem key={status} value={status}>
-                {ORDER_STATUSES[status as keyof typeof ORDER_STATUSES]?.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Button variant="outline" size="sm" onClick={fetchOrders} className="gap-2">
+          <RefreshCw className="w-4 h-4" />
+          Refresh
+        </Button>
       </div>
+
+      {/* Search and Filter Bar */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by order ID, customer name, phone, or email..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <SelectTrigger className="w-full md:w-48">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Orders ({orders.length})</SelectItem>
+                {statusOptions.map((status) => {
+                  const count = orders.filter(o => o.status === status).length;
+                  return (
+                    <SelectItem key={status} value={status}>
+                      {ORDER_STATUSES[status as keyof typeof ORDER_STATUSES]?.label} ({count})
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -380,12 +509,14 @@ export default function AdminOrders() {
               <Loader2 className="w-6 h-6 animate-spin text-primary" />
             </div>
           ) : filteredOrders.length === 0 ? (
-            <p className="text-center text-muted-foreground py-12">No orders found</p>
+            <p className="text-center text-muted-foreground py-12">
+              {searchQuery ? "No orders match your search" : "No orders found"}
+            </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead></TableHead>
+                  <TableHead className="w-10"></TableHead>
                   <TableHead>Order ID</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Items</TableHead>
@@ -399,7 +530,7 @@ export default function AdminOrders() {
               <TableBody>
                 {filteredOrders.map((order) => (
                   <Fragment key={order.id}>
-                    <TableRow>
+                    <TableRow className="hover:bg-muted/50">
                       <TableCell>
                         <Button
                           variant="ghost"
@@ -414,7 +545,12 @@ export default function AdminOrders() {
                         </Button>
                       </TableCell>
                       <TableCell className="font-mono text-sm">
-                        #{order.id.slice(0, 8)}
+                        <button 
+                          onClick={() => setDetailsOrder(order)}
+                          className="hover:text-primary hover:underline"
+                        >
+                          #{order.id.slice(0, 8)}
+                        </button>
                       </TableCell>
                       <TableCell>
                         {order.profile ? (
@@ -474,21 +610,30 @@ export default function AdminOrders() {
                         {new Date(order.created_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
-                        <Select
-                          value={order.status}
-                          onValueChange={(v) => handleStatusChange(order.id, v, order)}
-                        >
-                          <SelectTrigger className="w-40 h-8 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {statusOptions.map((status) => (
-                              <SelectItem key={status} value={status} className="text-xs">
-                                {ORDER_STATUSES[status as keyof typeof ORDER_STATUSES]?.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setDetailsOrder(order)}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Select
+                            value={order.status}
+                            onValueChange={(v) => handleStatusChange(order.id, v, order)}
+                          >
+                            <SelectTrigger className="w-32 h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {statusOptions.map((status) => (
+                                <SelectItem key={status} value={status} className="text-xs">
+                                  {ORDER_STATUSES[status as keyof typeof ORDER_STATUSES]?.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </TableCell>
                     </TableRow>
                     {expandedOrder === order.id && (
@@ -518,11 +663,11 @@ export default function AdminOrders() {
                                   className="flex items-center gap-4 p-3 bg-card rounded-lg border"
                                 >
                                   <div
-                                    className="w-6 h-6 rounded-full border"
+                                    className="w-6 h-6 rounded-full border flex-shrink-0"
                                     style={{ backgroundColor: item.color }}
                                   />
-                                  <div className="flex-1">
-                                    <p className="font-medium">{item.file_name}</p>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-medium truncate">{item.file_name}</p>
                                     <p className="text-sm text-muted-foreground">
                                       {item.material.toUpperCase()} • {item.quality} quality • {item.infill_percentage}% infill
                                     </p>
@@ -533,6 +678,18 @@ export default function AdminOrders() {
                                       {formatPrice(item.price)}
                                     </span>
                                   )}
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleDownloadFile(item.file_path, item.file_name)}
+                                    disabled={isDownloading === item.file_path}
+                                  >
+                                    {isDownloading === item.file_path ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      <Download className="w-4 h-4" />
+                                    )}
+                                  </Button>
                                 </div>
                               ))}
                             </div>
@@ -676,6 +833,202 @@ export default function AdminOrders() {
               }}
             >
               Approve Payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Order Details Dialog */}
+      <Dialog open={!!detailsOrder} onOpenChange={() => setDetailsOrder(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="w-5 h-5" />
+              Order Details
+            </DialogTitle>
+          </DialogHeader>
+          
+          {detailsOrder && (
+            <ScrollArea className="max-h-[70vh]">
+              <div className="space-y-6 pr-4">
+                {/* Order Header */}
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-mono text-lg font-semibold">#{detailsOrder.id.slice(0, 8)}</p>
+                    <p className="text-sm text-muted-foreground">
+                      Full ID: {detailsOrder.id}
+                    </p>
+                  </div>
+                  {getStatusBadge(detailsOrder.status)}
+                </div>
+
+                <Separator />
+
+                {/* Customer Info */}
+                <div>
+                  <h4 className="font-semibold mb-3 flex items-center gap-2">
+                    <Mail className="w-4 h-4" />
+                    Customer Information
+                  </h4>
+                  {detailsOrder.profile ? (
+                    <div className="grid gap-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground w-20">Name:</span>
+                        <span className="font-medium">{detailsOrder.profile.first_name} {detailsOrder.profile.last_name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Phone className="w-4 h-4 text-muted-foreground" />
+                        <span>{detailsOrder.profile.phone}</span>
+                      </div>
+                      {detailsOrder.profile.email && (
+                        <div className="flex items-center gap-2">
+                          <Mail className="w-4 h-4 text-muted-foreground" />
+                          <span>{detailsOrder.profile.email}</span>
+                        </div>
+                      )}
+                      <div className="flex items-start gap-2">
+                        <MapPin className="w-4 h-4 text-muted-foreground mt-0.5" />
+                        <span>{detailsOrder.profile.address}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground">No customer information</p>
+                  )}
+                </div>
+
+                <Separator />
+
+                {/* Timeline */}
+                <div>
+                  <h4 className="font-semibold mb-3 flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Order Timeline
+                  </h4>
+                  <div className="grid gap-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Created:</span>
+                      <span>{new Date(detailsOrder.created_at).toLocaleString()}</span>
+                    </div>
+                    {detailsOrder.priced_at && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Priced:</span>
+                        <span>{new Date(detailsOrder.priced_at).toLocaleString()}</span>
+                      </div>
+                    )}
+                    {detailsOrder.paid_at && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Payment Verified:</span>
+                        <span>{new Date(detailsOrder.paid_at).toLocaleString()}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Last Updated:</span>
+                      <span>{new Date(detailsOrder.updated_at).toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Order Items */}
+                <div>
+                  <h4 className="font-semibold mb-3 flex items-center gap-2">
+                    <FileText className="w-4 h-4" />
+                    Order Items ({detailsOrder.order_items.length})
+                  </h4>
+                  <div className="space-y-3">
+                    {detailsOrder.order_items.map((item) => (
+                      <div key={item.id} className="p-3 border rounded-lg">
+                        <div className="flex items-start gap-3">
+                          <div
+                            className="w-8 h-8 rounded-full border flex-shrink-0"
+                            style={{ backgroundColor: item.color }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium">{item.file_name}</p>
+                            <div className="text-sm text-muted-foreground space-y-1 mt-1">
+                              <p>Material: {item.material.toUpperCase()}</p>
+                              <p>Quality: {item.quality}</p>
+                              <p>Infill: {item.infill_percentage}%</p>
+                              <p>Quantity: {item.quantity}</p>
+                              {item.notes && <p>Notes: {item.notes}</p>}
+                              {item.price && (
+                                <p className="text-primary font-medium">Price: {formatPrice(item.price)}</p>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-2"
+                            onClick={() => handleDownloadFile(item.file_path, item.file_name)}
+                            disabled={isDownloading === item.file_path}
+                          >
+                            {isDownloading === item.file_path ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Download className="w-4 h-4" />
+                            )}
+                            Download
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Pricing Summary */}
+                {detailsOrder.total_price && (
+                  <div>
+                    <h4 className="font-semibold mb-3">Pricing Summary</h4>
+                    <div className="bg-muted/50 p-4 rounded-lg space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Items Total:</span>
+                        <span>{formatPrice((detailsOrder.total_price || 0) - (detailsOrder.delivery_charge || 0))}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Delivery Charge:</span>
+                        <span>{formatPrice(detailsOrder.delivery_charge || 0)}</span>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between font-bold">
+                        <span>Total:</span>
+                        <span className="text-primary">{formatPrice(detailsOrder.total_price)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Notes */}
+                {detailsOrder.notes && (
+                  <>
+                    <Separator />
+                    <div>
+                      <h4 className="font-semibold mb-2">Order Notes</h4>
+                      <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
+                        {detailsOrder.notes}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </ScrollArea>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailsOrder(null)}>
+              Close
+            </Button>
+            <Button onClick={() => {
+              if (detailsOrder) {
+                openPricingDialog(detailsOrder);
+                setDetailsOrder(null);
+              }
+            }}>
+              <DollarSign className="w-4 h-4 mr-2" />
+              Set/Update Price
             </Button>
           </DialogFooter>
         </DialogContent>
