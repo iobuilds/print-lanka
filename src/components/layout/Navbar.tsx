@@ -53,8 +53,8 @@ export function Navbar() {
               Pricing Guide
             </Link>
             {user && (
-              <Link to="/orders" className="text-muted-foreground hover:text-foreground transition-colors">
-                My Orders
+              <Link to="/dashboard" className="text-muted-foreground hover:text-foreground transition-colors">
+                My Dashboard
               </Link>
             )}
             {isAdminOrModerator && (
@@ -89,11 +89,11 @@ export function Navbar() {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => navigate("/orders")}>
+                  <DropdownMenuItem onClick={() => navigate("/dashboard")}>
                     <LayoutDashboard className="mr-2 h-4 w-4" />
-                    My Orders
+                    Dashboard
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => navigate("/profile")}>
+                  <DropdownMenuItem onClick={() => navigate("/dashboard?tab=profile")}>
                     <User className="mr-2 h-4 w-4" />
                     Profile
                   </DropdownMenuItem>
@@ -159,11 +159,11 @@ export function Navbar() {
               {user ? (
                 <>
                   <Link
-                    to="/orders"
+                    to="/dashboard"
                     className="text-muted-foreground hover:text-foreground transition-colors"
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    My Orders
+                    My Dashboard
                   </Link>
                   {isAdminOrModerator && (
                     <Link
