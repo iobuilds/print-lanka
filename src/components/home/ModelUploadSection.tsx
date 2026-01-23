@@ -376,11 +376,11 @@ export function ModelUploadSection() {
               </p>
             </div>
 
-            <Card className="flex-1 overflow-hidden border-2 border-dashed border-border hover:border-primary/50 transition-colors">
+            <Card className="overflow-hidden border-2 border-dashed border-border hover:border-primary/50 transition-colors">
               <CardContent className="p-0">
                 {uploadedModels.length === 0 ? (
                   <div
-                    className={`relative h-full min-h-[320px] flex flex-col items-center justify-center p-8 transition-all duration-300 ${
+                    className={`relative min-h-[320px] flex flex-col items-center justify-center p-8 transition-all duration-300 ${
                       isDragging ? "bg-primary/10 border-primary" : "bg-secondary/30"
                     }`}
                     onDrop={handleDrop}
@@ -420,9 +420,9 @@ export function ModelUploadSection() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="h-full min-h-[320px] flex flex-col">
+                  <div className="flex flex-col">
                     {/* 3D Viewer */}
-                    <div className="relative flex-1 bg-gradient-to-br from-slate-900 to-slate-800">
+                    <div className="relative h-[260px] sm:h-[320px] lg:h-[360px] bg-gradient-to-br from-slate-900 to-slate-800">
                       {currentModel?.geometry && (
                         <ModelViewer geometry={currentModel.geometry} color={currentModel.config.color} />
                       )}
