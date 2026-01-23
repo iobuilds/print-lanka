@@ -380,7 +380,7 @@ export function ModelUploadSection() {
               <CardContent className="p-0">
                 {uploadedModels.length === 0 ? (
                   <div
-                    className={`relative h-full min-h-[450px] flex flex-col items-center justify-center p-8 transition-all duration-300 ${
+                    className={`relative h-full min-h-[320px] flex flex-col items-center justify-center p-8 transition-all duration-300 ${
                       isDragging ? "bg-primary/10 border-primary" : "bg-secondary/30"
                     }`}
                     onDrop={handleDrop}
@@ -420,7 +420,7 @@ export function ModelUploadSection() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="h-full min-h-[450px] flex flex-col">
+                  <div className="h-full min-h-[320px] flex flex-col">
                     {/* 3D Viewer */}
                     <div className="relative flex-1 bg-gradient-to-br from-slate-900 to-slate-800">
                       {currentModel?.geometry && (
