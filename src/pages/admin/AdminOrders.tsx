@@ -3,11 +3,34 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Eye, ChevronDown, ChevronUp } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Loader2, ChevronDown, ChevronUp, DollarSign, Save, Send, Eye, FileImage } from "lucide-react";
 import { formatPrice, ORDER_STATUSES } from "@/lib/constants";
 import { toast } from "sonner";
+
+interface OrderItem {
+  id: string;
+  file_name: string;
+  file_path: string;
+  quantity: number;
+  color: string;
+  material: string;
+  quality: string;
+  infill_percentage: number;
+  price: number | null;
+}
+
+interface PaymentSlip {
+  id: string;
+  file_name: string;
+  file_path: string;
+  verified: boolean;
+  uploaded_at: string;
+}
 
 interface Order {
   id: string;
@@ -15,21 +38,16 @@ interface Order {
   total_price: number | null;
   delivery_charge: number | null;
   created_at: string;
+  notes: string | null;
   user_id: string;
   profile: {
     first_name: string;
     last_name: string;
     phone: string;
+    address: string;
   } | null;
-  order_items: {
-    id: string;
-    file_name: string;
-    quantity: number;
-    color: string;
-    material: string;
-    quality: string;
-    infill_percentage: number;
-  }[];
+  order_items: OrderItem[];
+  payment_slips: PaymentSlip[];
 }
 
 const statusOptions = Object.keys(ORDER_STATUSES);
@@ -39,6 +57,11 @@ export default function AdminOrders() {
   const [isLoading, setIsLoading] = useState(true);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [pricingOrder, setPricingOrder] = useState<Order | null>(null);
+  const [itemPrices, setItemPrices] = useState<Record<string, number>>({});
+  const [deliveryCharge, setDeliveryCharge] = useState<number>(350);
+  const [isSavingPrices, setIsSavingPrices] = useState(false);
+  const [viewingSlip, setViewingSlip] = useState<string | null>(null);
 
   useEffect(() => {
     fetchOrders();
@@ -52,42 +75,215 @@ export default function AdminOrders() {
         profile:profiles!orders_user_id_fkey (
           first_name,
           last_name,
-          phone
+          phone,
+          address
         ),
         order_items (
           id,
           file_name,
+          file_path,
           quantity,
           color,
           material,
           quality,
-          infill_percentage
+          infill_percentage,
+          price
+        ),
+        payment_slips (
+          id,
+          file_name,
+          file_path,
+          verified,
+          uploaded_at
         )
       `)
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      // Map the data to handle potential null profiles
       const mappedOrders = data.map((order: any) => ({
         ...order,
-        profile: Array.isArray(order.profile) ? order.profile[0] : order.profile
+        profile: Array.isArray(order.profile) ? order.profile[0] : order.profile,
+        payment_slips: order.payment_slips || []
       }));
       setOrders(mappedOrders);
     }
     setIsLoading(false);
   };
 
-  const handleStatusChange = async (orderId: string, newStatus: string) => {
+  const handleStatusChange = async (orderId: string, newStatus: string, order: Order) => {
     const { error } = await supabase
       .from("orders")
       .update({ status: newStatus as any })
       .eq("id", orderId);
 
     if (!error) {
+      // Send SMS notification for key status changes
+      const notifyStatuses = [
+        "priced_awaiting_payment",
+        "payment_approved",
+        "payment_rejected",
+        "ready_to_ship",
+        "shipped"
+      ];
+
+      if (notifyStatuses.includes(newStatus) && order.profile?.phone) {
+        const messages: Record<string, string> = {
+          priced_awaiting_payment: `Your order #${orderId.slice(0, 8)} has been priced at ${order.total_price ? formatPrice(order.total_price) : 'pending'}. Please upload your payment slip to proceed.`,
+          payment_approved: `Payment approved for order #${orderId.slice(0, 8)}. Your order is now in production!`,
+          payment_rejected: `Payment verification failed for order #${orderId.slice(0, 8)}. Please contact us or upload a new payment slip.`,
+          ready_to_ship: `Great news! Your order #${orderId.slice(0, 8)} is ready to ship. Expect delivery soon!`,
+          shipped: `Your order #${orderId.slice(0, 8)} has been shipped! Track your delivery for updates.`,
+        };
+
+        try {
+          await supabase.functions.invoke("send-sms", {
+            body: {
+              phone: order.profile.phone,
+              message: messages[newStatus],
+              order_id: orderId,
+              user_id: order.user_id,
+            },
+          });
+        } catch (smsError) {
+          console.error("SMS notification failed:", smsError);
+        }
+      }
+
       fetchOrders();
       toast.success("Order status updated");
     } else {
       toast.error("Failed to update status");
+    }
+  };
+
+  const openPricingDialog = (order: Order) => {
+    setPricingOrder(order);
+    const prices: Record<string, number> = {};
+    order.order_items.forEach(item => {
+      prices[item.id] = item.price || 0;
+    });
+    setItemPrices(prices);
+    setDeliveryCharge(order.delivery_charge || 350);
+  };
+
+  const calculateTotal = () => {
+    const itemsTotal = Object.values(itemPrices).reduce((sum, price) => sum + (price || 0), 0);
+    return itemsTotal + deliveryCharge;
+  };
+
+  const handleSavePrices = async () => {
+    if (!pricingOrder) return;
+
+    setIsSavingPrices(true);
+    try {
+      // Update each order item price
+      for (const [itemId, price] of Object.entries(itemPrices)) {
+        const { error } = await supabase
+          .from("order_items")
+          .update({ price })
+          .eq("id", itemId);
+
+        if (error) throw error;
+      }
+
+      // Update order total and status
+      const total = calculateTotal();
+      const { error: orderError } = await supabase
+        .from("orders")
+        .update({
+          total_price: total,
+          delivery_charge: deliveryCharge,
+          status: "priced_awaiting_payment",
+          priced_at: new Date().toISOString(),
+        })
+        .eq("id", pricingOrder.id);
+
+      if (orderError) throw orderError;
+
+      // Send SMS notification
+      if (pricingOrder.profile?.phone) {
+        try {
+          await supabase.functions.invoke("send-sms", {
+            body: {
+              phone: pricingOrder.profile.phone,
+              message: `Your order #${pricingOrder.id.slice(0, 8)} has been priced at ${formatPrice(total)}. Please upload your bank transfer slip to proceed. View your order at your dashboard.`,
+              order_id: pricingOrder.id,
+              user_id: pricingOrder.user_id,
+            },
+          });
+        } catch (smsError) {
+          console.error("SMS notification failed:", smsError);
+        }
+      }
+
+      setPricingOrder(null);
+      fetchOrders();
+      toast.success("Prices saved and customer notified");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save prices");
+    } finally {
+      setIsSavingPrices(false);
+    }
+  };
+
+  const handleViewPaymentSlip = async (filePath: string) => {
+    const { data } = await supabase.storage
+      .from("payment-slips")
+      .createSignedUrl(filePath, 300);
+
+    if (data?.signedUrl) {
+      setViewingSlip(data.signedUrl);
+    } else {
+      toast.error("Failed to load payment slip");
+    }
+  };
+
+  const handleVerifyPayment = async (orderId: string, slipId: string, approved: boolean) => {
+    try {
+      // Update payment slip
+      await supabase
+        .from("payment_slips")
+        .update({
+          verified: approved,
+          verified_at: new Date().toISOString(),
+        })
+        .eq("id", slipId);
+
+      // Update order status
+      await supabase
+        .from("orders")
+        .update({
+          status: approved ? "payment_approved" : "payment_rejected",
+          paid_at: approved ? new Date().toISOString() : null,
+          payment_rejection_reason: approved ? null : "Payment verification failed",
+        })
+        .eq("id", orderId);
+
+      const order = orders.find(o => o.id === orderId);
+      if (order?.profile?.phone) {
+        const message = approved
+          ? `Payment approved for order #${orderId.slice(0, 8)}! Your order is now in production.`
+          : `Payment verification failed for order #${orderId.slice(0, 8)}. Please contact us or upload a new payment slip.`;
+
+        try {
+          await supabase.functions.invoke("send-sms", {
+            body: {
+              phone: order.profile.phone,
+              message,
+              order_id: orderId,
+              user_id: order.user_id,
+            },
+          });
+        } catch (smsError) {
+          console.error("SMS notification failed:", smsError);
+        }
+      }
+
+      setViewingSlip(null);
+      fetchOrders();
+      toast.success(approved ? "Payment approved" : "Payment rejected");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to verify payment");
     }
   };
 
@@ -119,7 +315,7 @@ export default function AdminOrders() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold">Orders</h1>
-          <p className="text-muted-foreground">Manage customer orders</p>
+          <p className="text-muted-foreground">Manage customer orders and pricing</p>
         </div>
         <Select value={filterStatus} onValueChange={setFilterStatus}>
           <SelectTrigger className="w-48">
@@ -159,6 +355,7 @@ export default function AdminOrders() {
                   <TableHead>Customer</TableHead>
                   <TableHead>Items</TableHead>
                   <TableHead>Total</TableHead>
+                  <TableHead>Payment</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Actions</TableHead>
@@ -198,7 +395,32 @@ export default function AdminOrders() {
                       </TableCell>
                       <TableCell>{order.order_items.length} items</TableCell>
                       <TableCell>
-                        {order.total_price ? formatPrice(order.total_price) : "Not priced"}
+                        {order.total_price ? formatPrice(order.total_price) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1"
+                            onClick={() => openPricingDialog(order)}
+                          >
+                            <DollarSign className="w-3 h-3" />
+                            Set Price
+                          </Button>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {order.payment_slips.length > 0 ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1"
+                            onClick={() => handleViewPaymentSlip(order.payment_slips[0].file_path)}
+                          >
+                            <FileImage className="w-3 h-3" />
+                            View Slip
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">No slip</span>
+                        )}
                       </TableCell>
                       <TableCell>{getStatusBadge(order.status)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
@@ -207,7 +429,7 @@ export default function AdminOrders() {
                       <TableCell>
                         <Select
                           value={order.status}
-                          onValueChange={(v) => handleStatusChange(order.id, v)}
+                          onValueChange={(v) => handleStatusChange(order.id, v, order)}
                         >
                           <SelectTrigger className="w-40 h-8 text-xs">
                             <SelectValue />
@@ -224,9 +446,24 @@ export default function AdminOrders() {
                     </TableRow>
                     {expandedOrder === order.id && (
                       <TableRow className="bg-muted/50">
-                        <TableCell colSpan={8}>
-                          <div className="p-4 space-y-3">
-                            <h4 className="font-semibold">Order Items</h4>
+                        <TableCell colSpan={9}>
+                          <div className="p-4 space-y-4">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h4 className="font-semibold mb-2">Order Items</h4>
+                                {order.notes && (
+                                  <p className="text-sm text-muted-foreground mb-2">
+                                    Notes: {order.notes}
+                                  </p>
+                                )}
+                              </div>
+                              {order.profile && (
+                                <div className="text-right text-sm">
+                                  <p className="font-medium">Delivery Address:</p>
+                                  <p className="text-muted-foreground">{order.profile.address}</p>
+                                </div>
+                              )}
+                            </div>
                             <div className="grid gap-2">
                               {order.order_items.map((item) => (
                                 <div
@@ -244,9 +481,24 @@ export default function AdminOrders() {
                                     </p>
                                   </div>
                                   <span className="font-medium">×{item.quantity}</span>
+                                  {item.price && (
+                                    <span className="font-medium text-primary">
+                                      {formatPrice(item.price)}
+                                    </span>
+                                  )}
                                 </div>
                               ))}
                             </div>
+                            {order.total_price && (
+                              <div className="flex justify-end gap-4 text-sm">
+                                <span className="text-muted-foreground">
+                                  Delivery: {formatPrice(order.delivery_charge || 0)}
+                                </span>
+                                <span className="font-bold">
+                                  Total: {formatPrice(order.total_price)}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -258,6 +510,133 @@ export default function AdminOrders() {
           )}
         </CardContent>
       </Card>
+
+      {/* Pricing Dialog */}
+      <Dialog open={!!pricingOrder} onOpenChange={() => setPricingOrder(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Set Order Prices</DialogTitle>
+          </DialogHeader>
+          
+          {pricingOrder && (
+            <div className="space-y-4">
+              <div className="text-sm text-muted-foreground">
+                Order #{pricingOrder.id.slice(0, 8)} • {pricingOrder.profile?.first_name} {pricingOrder.profile?.last_name}
+              </div>
+
+              <div className="space-y-3">
+                {pricingOrder.order_items.map((item) => (
+                  <div key={item.id} className="flex items-center gap-4 p-3 border rounded-lg">
+                    <div
+                      className="w-6 h-6 rounded-full border flex-shrink-0"
+                      style={{ backgroundColor: item.color }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{item.file_name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.material.toUpperCase()} • {item.quality} • {item.infill_percentage}% • ×{item.quantity}
+                      </p>
+                    </div>
+                    <div className="w-32">
+                      <Input
+                        type="number"
+                        placeholder="Price (LKR)"
+                        value={itemPrices[item.id] || ""}
+                        onChange={(e) => 
+                          setItemPrices({ ...itemPrices, [item.id]: Number(e.target.value) })
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-4 p-3 border rounded-lg bg-muted/50">
+                <div className="flex-1">
+                  <Label>Delivery Charge</Label>
+                </div>
+                <div className="w-32">
+                  <Input
+                    type="number"
+                    value={deliveryCharge}
+                    onChange={(e) => setDeliveryCharge(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center p-4 bg-primary/10 rounded-lg">
+                <span className="font-semibold">Total</span>
+                <span className="text-xl font-bold text-primary">
+                  {formatPrice(calculateTotal())}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPricingOrder(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSavePrices} disabled={isSavingPrices}>
+              {isSavingPrices ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4 mr-2" />
+              )}
+              Save & Notify Customer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment Slip Viewer */}
+      <Dialog open={!!viewingSlip} onOpenChange={() => setViewingSlip(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>Payment Slip</DialogTitle>
+          </DialogHeader>
+          
+          {viewingSlip && (
+            <div className="space-y-4">
+              <div className="max-h-[60vh] overflow-auto rounded-lg border">
+                {viewingSlip.includes('.pdf') ? (
+                  <iframe src={viewingSlip} className="w-full h-[60vh]" />
+                ) : (
+                  <img src={viewingSlip} alt="Payment slip" className="w-full" />
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button 
+              variant="destructive" 
+              onClick={() => {
+                const order = orders.find(o => 
+                  o.payment_slips.some(s => viewingSlip?.includes(s.file_path.split('/').pop() || ''))
+                );
+                if (order) {
+                  handleVerifyPayment(order.id, order.payment_slips[0].id, false);
+                }
+              }}
+            >
+              Reject Payment
+            </Button>
+            <Button 
+              onClick={() => {
+                const order = orders.find(o => 
+                  o.payment_slips.some(s => viewingSlip?.includes(s.file_path.split('/').pop() || ''))
+                );
+                if (order) {
+                  handleVerifyPayment(order.id, order.payment_slips[0].id, true);
+                }
+              }}
+            >
+              Approve Payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

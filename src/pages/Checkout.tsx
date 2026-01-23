@@ -11,7 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Label } from "@/components/ui/label";
 import { 
   Box, Upload, Loader2, CheckCircle, ChevronRight, 
-  Percent, AlertCircle, CalendarIcon, FileImage, X
+  Percent, AlertCircle, CalendarIcon
 } from "lucide-react";
 import { formatPrice, MATERIALS, QUALITY_PRESETS } from "@/lib/constants";
 import { toast } from "sonner";
@@ -51,8 +51,6 @@ export default function Checkout() {
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState<Date | undefined>(
     addDays(new Date(), 7)
   );
-  const [paymentSlip, setPaymentSlip] = useState<File | null>(null);
-  const [paymentSlipPreview, setPaymentSlipPreview] = useState<string | null>(null);
 
   // Get order data from memory store
   const orderData = getOrderData();
@@ -70,34 +68,6 @@ export default function Checkout() {
       navigate("/");
     }
   }, [models.length, navigate, orderSubmitted]);
-
-  const handlePaymentSlipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
-        toast.error("Please upload an image or PDF file");
-        return;
-      }
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error("File size must be less than 10MB");
-        return;
-      }
-      setPaymentSlip(file);
-      if (file.type.startsWith('image/')) {
-        setPaymentSlipPreview(URL.createObjectURL(file));
-      } else {
-        setPaymentSlipPreview(null);
-      }
-    }
-  };
-
-  const removePaymentSlip = () => {
-    setPaymentSlip(null);
-    if (paymentSlipPreview) {
-      URL.revokeObjectURL(paymentSlipPreview);
-      setPaymentSlipPreview(null);
-    }
-  };
 
   const handleSubmitOrder = async () => {
     if (!user || models.length === 0) return;
@@ -156,30 +126,7 @@ export default function Checkout() {
         setUploadProgress((prev) => ({ ...prev, [i]: 100 }));
       }
 
-      // 3. Upload payment slip if provided
-      if (paymentSlip) {
-        const slipPath = `${user.id}/${order.id}/payment_slip_${Date.now()}_${paymentSlip.name}`;
-        
-        const { error: slipUploadError } = await supabase.storage
-          .from("payment-slips")
-          .upload(slipPath, paymentSlip);
-
-        if (slipUploadError) throw slipUploadError;
-
-        // Create payment slip record
-        const { error: slipRecordError } = await supabase
-          .from("payment_slips")
-          .insert({
-            order_id: order.id,
-            user_id: user.id,
-            file_name: paymentSlip.name,
-            file_path: slipPath,
-          });
-
-        if (slipRecordError) throw slipRecordError;
-      }
-
-      // 4. Mark coupon as used if applicable
+      // 3. Mark coupon as used if applicable
       if (coupon) {
         await supabase
           .from("user_coupons")
@@ -351,66 +298,18 @@ export default function Checkout() {
                 </CardContent>
               </Card>
 
-              {/* Payment Slip Upload */}
+              {/* Info about payment */}
               <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FileImage className="w-5 h-5" />
-                    Payment Slip (Optional)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground">
-                      You can upload your bank transfer receipt now or later from your dashboard after the order is priced.
-                    </p>
-                    
-                    {paymentSlip ? (
-                      <div className="flex items-center gap-3 p-3 border rounded-lg bg-muted/50">
-                        {paymentSlipPreview ? (
-                          <img 
-                            src={paymentSlipPreview} 
-                            alt="Payment slip preview" 
-                            className="w-16 h-16 object-cover rounded"
-                          />
-                        ) : (
-                          <div className="w-16 h-16 bg-primary/10 rounded flex items-center justify-center">
-                            <FileImage className="w-8 h-8 text-primary" />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">{paymentSlip.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {(paymentSlip.size / 1024).toFixed(1)} KB
-                          </p>
-                        </div>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          onClick={removePaymentSlip}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <X className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="border-2 border-dashed rounded-lg p-6 text-center">
-                        <input
-                          type="file"
-                          id="paymentSlip"
-                          accept="image/*,application/pdf"
-                          onChange={handlePaymentSlipChange}
-                          className="hidden"
-                        />
-                        <label htmlFor="paymentSlip" className="cursor-pointer">
-                          <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                          <p className="text-sm font-medium">Click to upload payment slip</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            PNG, JPG, or PDF up to 10MB
-                          </p>
-                        </label>
-                      </div>
-                    )}
+                <CardContent className="pt-6">
+                  <div className="flex items-start gap-3 p-4 bg-muted rounded-lg">
+                    <AlertCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-sm">Payment After Pricing</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Once we review and price your order, you'll receive an SMS notification. 
+                        You can then upload your bank transfer slip from your dashboard.
+                      </p>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -479,12 +378,6 @@ export default function Checkout() {
                     </>
                   )}
 
-                  {paymentSlip && (
-                    <div className="flex items-center gap-2 text-sm bg-primary/10 p-2 rounded">
-                      <CheckCircle className="w-4 h-4 text-primary" />
-                      <span className="text-primary font-medium">Payment slip attached</span>
-                    </div>
-                  )}
 
                   <Separator />
 
