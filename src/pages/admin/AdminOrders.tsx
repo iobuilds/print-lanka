@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { 
   Loader2, ChevronDown, ChevronUp, DollarSign, Send, FileImage, 
   Search, Download, Eye, RefreshCw, Bell, MapPin, Phone, Mail,
-  Package, Calendar, FileText, Calculator
+  Package, Calendar, FileText, Calculator, Percent, Tag
 } from "lucide-react";
 import { formatPrice, ORDER_STATUSES } from "@/lib/constants";
 import { toast } from "sonner";
@@ -853,6 +853,22 @@ export default function AdminOrders() {
                 </div>
               </div>
 
+              {/* Coupon Applied Info */}
+              {pricingOrder.notes?.includes("Coupon:") && (
+                <div className="flex items-center justify-between p-3 border rounded-lg bg-success/10 border-success/20">
+                  <div className="flex items-center gap-2 text-success">
+                    <Tag className="w-4 h-4" />
+                    <span className="font-medium text-sm">Coupon Applied</span>
+                    <Badge variant="secondary" className="text-success bg-success/20">
+                      {pricingOrder.notes.match(/Coupon: (\w+)/)?.[1] || "Applied"}
+                    </Badge>
+                  </div>
+                  <span className="text-sm text-muted-foreground">
+                    Discount will be applied to final total
+                  </span>
+                </div>
+              )}
+
               <div className="flex justify-between items-center p-4 bg-primary/10 rounded-lg">
                 <span className="font-semibold">Total</span>
                 <span className="text-xl font-bold text-primary">
@@ -1077,6 +1093,18 @@ export default function AdminOrders() {
                         <span className="text-muted-foreground">Delivery Charge:</span>
                         <span>{formatPrice(detailsOrder.delivery_charge || 0)}</span>
                       </div>
+                      {/* Show coupon if applied */}
+                      {detailsOrder.notes?.includes("Coupon:") && (
+                        <div className="flex justify-between text-sm text-success">
+                          <span className="flex items-center gap-1">
+                            <Tag className="w-3 h-3" />
+                            Coupon Applied:
+                          </span>
+                          <span className="font-medium">
+                            {detailsOrder.notes.match(/Coupon: (\w+)/)?.[1] || "Applied"}
+                          </span>
+                        </div>
+                      )}
                       <Separator />
                       <div className="flex justify-between font-bold">
                         <span>Total:</span>
