@@ -70,7 +70,7 @@ export default function Checkout() {
   const models: UploadedModel[] = orderData?.models || [];
   const preSelectedCoupon: CouponData | null = orderData?.coupon || null;
 
-  // Fetch user's available coupons
+  // Fetch user's available coupons (only unused ones with valid expiration)
   useEffect(() => {
     const fetchUserCoupons = async () => {
       if (!user) return;
@@ -80,27 +80,52 @@ export default function Checkout() {
         .select(`
           id,
           is_used,
+          use_count,
           coupon:coupons (
             code,
             discount_type,
             discount_value,
-            valid_until
+            valid_until,
+            uses_per_user
           )
         `)
         .eq("user_id", user.id)
         .eq("is_used", false);
 
       if (!error && data) {
-        const mappedCoupons = data.map((uc: any) => ({
+        // Filter out coupons that have been fully used or are expired
+        const validCoupons = data.filter((uc: any) => {
+          // Skip if coupon data is missing
+          if (!uc.coupon) return false;
+          
+          // Check if coupon is expired
+          if (uc.coupon.valid_until && new Date(uc.coupon.valid_until) < new Date()) {
+            return false;
+          }
+          
+          // Check if user has already used all their allowed uses
+          const usesPerUser = uc.coupon.uses_per_user || 1;
+          const useCount = uc.use_count || 0;
+          if (useCount >= usesPerUser) {
+            return false;
+          }
+          
+          return true;
+        });
+
+        const mappedCoupons = validCoupons.map((uc: any) => ({
           id: uc.id,
           is_used: uc.is_used,
           coupon: uc.coupon
         }));
         setUserCoupons(mappedCoupons);
         
-        // Pre-select coupon if passed from upload page
+        // Pre-select coupon if passed from upload page (only if it's valid)
         if (preSelectedCoupon) {
-          setSelectedCouponId(preSelectedCoupon.user_coupon_id);
+          const isValidPreselected = mappedCoupons.some(c => c.id === preSelectedCoupon.user_coupon_id);
+          if (isValidPreselected) {
+            setSelectedCouponId(preSelectedCoupon.user_coupon_id);
+          }
         }
       }
     };
