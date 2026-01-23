@@ -113,8 +113,8 @@ export default function Coupons() {
     }
   };
 
-  const hasCoupon = (couponId: string) => {
-    return userCoupons.some(uc => uc.coupon_id === couponId);
+  const getUserCoupon = (couponId: string) => {
+    return userCoupons.find((uc) => uc.coupon_id === couponId);
   };
 
   const isExpiringSoon = (validUntil: string | null) => {
@@ -158,16 +158,20 @@ export default function Coupons() {
           ) : (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 max-w-5xl mx-auto">
               {availableCoupons.map((coupon) => {
-                const claimed = hasCoupon(coupon.id);
+                const userCoupon = getUserCoupon(coupon.id);
+                const claimed = !!userCoupon;
+                const used = !!userCoupon?.is_used;
                 const expiringSoon = isExpiringSoon(coupon.valid_until);
 
                 return (
-                  <Card 
+                    <Card 
                     key={coupon.id} 
                     className={`relative overflow-hidden transition-all hover:shadow-lg ${
-                      claimed 
-                        ? "border-green-500/50 bg-green-500/5" 
-                        : "border-primary/20 hover:border-primary/50"
+                        claimed
+                          ? used
+                            ? "border-border bg-muted/30"
+                            : "border-green-500/50 bg-green-500/5"
+                          : "border-primary/20 hover:border-primary/50"
                     }`}
                   >
                     {/* Decorative gradient */}
@@ -184,13 +188,15 @@ export default function Coupons() {
                       </Badge>
                     )}
 
-                    {/* Claimed badge */}
+                    {/* Claimed/Used badge */}
                     {claimed && (
                       <Badge 
-                        className="absolute top-3 right-3 gap-1 bg-green-500"
+                        className={`absolute top-3 right-3 gap-1 ${
+                          used ? "bg-muted text-foreground" : "bg-green-500"
+                        }`}
                       >
                         <CheckCircle className="w-3 h-3" />
-                        In Wallet
+                        {used ? "Used" : "In Wallet"}
                       </Badge>
                     )}
 
@@ -257,11 +263,15 @@ export default function Coupons() {
                       {claimed ? (
                         <Button 
                           variant="outline" 
-                          className="w-full border-green-500 text-green-600 hover:bg-green-500/10"
+                          className={
+                            used
+                              ? "w-full"
+                              : "w-full border-green-500 text-green-600 hover:bg-green-500/10"
+                          }
                           onClick={() => navigate("/dashboard")}
                         >
                           <CheckCircle className="w-4 h-4 mr-2" />
-                          View in Wallet
+                          {used ? "View Used Coupon" : "View in Wallet"}
                         </Button>
                       ) : (
                         <Button 
