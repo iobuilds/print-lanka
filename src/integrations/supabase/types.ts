@@ -53,6 +53,7 @@ export type Database = {
           is_active: boolean | null
           max_uses: number | null
           min_order_value: number | null
+          uses_per_user: number | null
           valid_from: string | null
           valid_until: string | null
         }
@@ -67,6 +68,7 @@ export type Database = {
           is_active?: boolean | null
           max_uses?: number | null
           min_order_value?: number | null
+          uses_per_user?: number | null
           valid_from?: string | null
           valid_until?: string | null
         }
@@ -81,6 +83,7 @@ export type Database = {
           is_active?: boolean | null
           max_uses?: number | null
           min_order_value?: number | null
+          uses_per_user?: number | null
           valid_from?: string | null
           valid_until?: string | null
         }
@@ -416,6 +419,7 @@ export type Database = {
           coupon_id: string
           id: string
           is_used: boolean | null
+          use_count: number | null
           used_at: string | null
           used_on_order_id: string | null
           user_id: string
@@ -426,6 +430,7 @@ export type Database = {
           coupon_id: string
           id?: string
           is_used?: boolean | null
+          use_count?: number | null
           used_at?: string | null
           used_on_order_id?: string | null
           user_id: string
@@ -436,6 +441,7 @@ export type Database = {
           coupon_id?: string
           id?: string
           is_used?: boolean | null
+          use_count?: number | null
           used_at?: string | null
           used_on_order_id?: string | null
           user_id?: string

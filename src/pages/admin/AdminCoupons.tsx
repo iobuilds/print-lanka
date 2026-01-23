@@ -53,6 +53,7 @@ export default function AdminCoupons() {
     discount_value: 10,
     min_order_value: 0,
     max_uses: "",
+    uses_per_user: "1", // "1" = one-time per user, "" = unlimited per user
     valid_until: "",
   });
 
@@ -98,6 +99,7 @@ export default function AdminCoupons() {
         discount_value: newCoupon.discount_value,
         min_order_value: newCoupon.min_order_value || 0,
         max_uses: newCoupon.max_uses ? parseInt(newCoupon.max_uses) : null,
+        uses_per_user: newCoupon.uses_per_user ? parseInt(newCoupon.uses_per_user) : null,
         valid_until: newCoupon.valid_until || null,
         created_by: user?.id,
       });
@@ -112,6 +114,7 @@ export default function AdminCoupons() {
         discount_value: 10,
         min_order_value: 0,
         max_uses: "",
+        uses_per_user: "1",
         valid_until: "",
       });
       fetchCoupons();
@@ -233,22 +236,40 @@ export default function AdminCoupons() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Max Uses (leave empty for unlimited)</Label>
+                  <Label>Max Global Uses</Label>
                   <Input
                     type="number"
                     placeholder="Unlimited"
                     value={newCoupon.max_uses}
                     onChange={(e) => setNewCoupon({ ...newCoupon, max_uses: e.target.value })}
                   />
+                  <p className="text-xs text-muted-foreground">Total times this coupon can be used</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Min Order Value (LKR)</Label>
-                  <Input
-                    type="number"
-                    value={newCoupon.min_order_value}
-                    onChange={(e) => setNewCoupon({ ...newCoupon, min_order_value: parseFloat(e.target.value) || 0 })}
-                  />
+                  <Label>Uses Per User</Label>
+                  <Select
+                    value={newCoupon.uses_per_user}
+                    onValueChange={(v) => setNewCoupon({ ...newCoupon, uses_per_user: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">One-time per user</SelectItem>
+                      <SelectItem value="">Unlimited per user</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">How many times each user can use</p>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Min Order Value (LKR)</Label>
+                <Input
+                  type="number"
+                  value={newCoupon.min_order_value}
+                  onChange={(e) => setNewCoupon({ ...newCoupon, min_order_value: parseFloat(e.target.value) || 0 })}
+                />
               </div>
 
               <div className="space-y-2">
