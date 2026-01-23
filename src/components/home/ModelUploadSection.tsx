@@ -323,7 +323,7 @@ export function ModelUploadSection() {
   ];
 
   return (
-    <section className="min-h-[calc(100vh-4rem)] bg-gradient-to-br from-background via-background to-primary/5 py-8 flex items-center" id="upload">
+    <section className="bg-gradient-to-br from-background via-background to-primary/5 py-8" id="upload">
       <div className="container mx-auto px-4">
         {/* User's Available Coupons - Top */}
         {user && userCoupons.length > 0 && (
