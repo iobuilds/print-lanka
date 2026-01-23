@@ -54,7 +54,7 @@ export default function AdminCoupons() {
     discount_value: 10,
     min_order_value: 0,
     max_uses: "",
-    uses_per_user: "1", // "1" = one-time per user, "" = unlimited per user
+    uses_per_user: "1", // "1" = one-time per user, "unlimited" = unlimited per user
     valid_until: "",
   });
 
@@ -100,7 +100,9 @@ export default function AdminCoupons() {
         discount_value: newCoupon.discount_value,
         min_order_value: newCoupon.min_order_value || 0,
         max_uses: newCoupon.max_uses ? parseInt(newCoupon.max_uses) : null,
-        uses_per_user: newCoupon.uses_per_user ? parseInt(newCoupon.uses_per_user) : null,
+        uses_per_user: newCoupon.uses_per_user === "unlimited"
+          ? null
+          : parseInt(newCoupon.uses_per_user, 10) || 1,
         valid_until: newCoupon.valid_until || null,
         created_by: user?.id,
       });
@@ -257,7 +259,7 @@ export default function AdminCoupons() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="1">One-time per user</SelectItem>
-                      <SelectItem value="">Unlimited per user</SelectItem>
+                      <SelectItem value="unlimited">Unlimited per user</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">How many times each user can use</p>
