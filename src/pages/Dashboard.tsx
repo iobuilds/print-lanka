@@ -66,6 +66,21 @@ interface UserCoupon {
   };
 }
 
+const getOrderPricingBreakdown = (order: Order) => {
+  const itemsTotal = order.order_items.reduce((sum, item) => sum + (item.price || 0), 0);
+  const delivery = order.delivery_charge || 0;
+  const subtotal = itemsTotal + delivery;
+
+  const discount = order.applied_coupon
+    ? order.applied_coupon.discount_type === "percentage"
+      ? Math.round((subtotal * order.applied_coupon.discount_value) / 100)
+      : order.applied_coupon.discount_value
+    : 0;
+
+  const payable = Math.max(0, subtotal - discount);
+  return { itemsTotal, delivery, subtotal, discount, payable };
+};
+
 const statusIcons: Record<string, React.ReactNode> = {
   pending_review: <Clock className="w-4 h-4" />,
   priced_awaiting_payment: <CreditCard className="w-4 h-4" />,
@@ -505,9 +520,28 @@ export default function Dashboard() {
                                 </div>
                                 <div className="flex items-center gap-4">
                                   <div className="text-right">
-                                    <p className="font-semibold">
-                                      {order.total_price ? formatPrice(order.total_price) : "Pending quote"}
-                                    </p>
+                                    {order.total_price != null ? (
+                                      (() => {
+                                        const { subtotal, discount, payable } = getOrderPricingBreakdown(order);
+                                        return (
+                                          <div className="space-y-0.5">
+                                            <p className="font-semibold text-primary">
+                                              {formatPrice(payable)}
+                                            </p>
+                                            {order.applied_coupon && discount > 0 && (
+                                              <p className="text-xs text-success">
+                                                Coupon {order.applied_coupon.code}: -{formatPrice(discount)}
+                                              </p>
+                                            )}
+                                            <p className="text-xs text-muted-foreground">
+                                              Subtotal {formatPrice(subtotal)}
+                                            </p>
+                                          </div>
+                                        );
+                                      })()
+                                    ) : (
+                                      <p className="font-semibold">Pending quote</p>
+                                    )}
                                     <p className="text-xs text-muted-foreground">
                                       {new Date(order.created_at).toLocaleDateString()}
                                     </p>
