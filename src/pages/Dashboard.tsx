@@ -49,6 +49,7 @@ interface Order {
   delivery_charge: number | null;
   created_at: string;
   notes: string | null;
+  tracking_number: string | null;
   order_items: OrderItem[];
   payment_slips: PaymentSlip[];
   applied_coupon?: AppliedCoupon | null;
@@ -152,6 +153,7 @@ export default function Dashboard() {
         delivery_charge,
         created_at,
         notes,
+        tracking_number,
         order_items (
           id,
           file_name,
@@ -501,6 +503,12 @@ export default function Dashboard() {
                                         Slip uploaded
                                       </Badge>
                                     )}
+                                    {order.tracking_number && (order.status === "shipped" || order.status === "completed") && (
+                                      <Badge variant="outline" className="gap-1 border-success text-success">
+                                        <Truck className="w-3 h-3" />
+                                        {order.tracking_number}
+                                      </Badge>
+                                    )}
                                   </div>
                                   <div className="flex flex-wrap gap-2">
                                     {order.order_items.slice(0, 3).map((item) => (
@@ -666,6 +674,18 @@ export default function Dashboard() {
                                           </>
                                         );
                                       })()}
+                                    </div>
+                                  )}
+                                  {/* Tracking Info */}
+                                  {order.tracking_number && (order.status === "shipped" || order.status === "completed") && (
+                                    <div className="pt-3 border-t">
+                                      <div className="flex items-center gap-2 p-3 bg-success/10 rounded-lg border border-success/20">
+                                        <Truck className="w-5 h-5 text-success flex-shrink-0" />
+                                        <div>
+                                          <p className="text-sm font-medium">Tracking Number</p>
+                                          <p className="text-base font-mono">{order.tracking_number}</p>
+                                        </div>
+                                      </div>
                                     </div>
                                   )}
                                 </div>

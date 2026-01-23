@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { 
   Loader2, ChevronDown, ChevronUp, DollarSign, Send, FileImage, 
   Search, Download, Eye, RefreshCw, Bell, MapPin, Phone, Mail,
-  Package, Calendar, FileText, Calculator, Percent, Tag
+  Package, Calendar, FileText, Calculator, Percent, Tag, Truck, Edit2
 } from "lucide-react";
 import { formatPrice, ORDER_STATUSES } from "@/lib/constants";
 import { toast } from "sonner";
@@ -65,6 +65,7 @@ interface Order {
   user_id: string;
   priced_at: string | null;
   paid_at: string | null;
+  tracking_number: string | null;
   profile: Profile | null;
   order_items: OrderItem[];
   payment_slips: PaymentSlip[];
@@ -104,6 +105,11 @@ export default function AdminOrders() {
   const [detailsOrder, setDetailsOrder] = useState<Order | null>(null);
   const [isDownloading, setIsDownloading] = useState<string | null>(null);
   const [pricingConfig, setPricingConfig] = useState<PricingConfig>(defaultPricingConfig);
+  
+  // Tracking number dialog state
+  const [trackingDialog, setTrackingDialog] = useState<{ orderId: string; order: Order } | null>(null);
+  const [trackingNumber, setTrackingNumber] = useState<string>("");
+  const [isSavingTracking, setIsSavingTracking] = useState(false);
 
   useEffect(() => {
     fetchOrders();
@@ -330,9 +336,25 @@ export default function AdminOrders() {
   }, [orders, filterStatus, searchQuery]);
 
   const handleStatusChange = async (orderId: string, newStatus: string, order: Order) => {
+    // If changing to "shipped", open tracking dialog first
+    if (newStatus === "shipped") {
+      setTrackingNumber(order.tracking_number || "");
+      setTrackingDialog({ orderId, order });
+      return;
+    }
+
+    await updateOrderStatus(orderId, newStatus, order);
+  };
+
+  const updateOrderStatus = async (orderId: string, newStatus: string, order: Order, trackingNum?: string) => {
+    const updateData: any = { status: newStatus };
+    if (trackingNum !== undefined) {
+      updateData.tracking_number = trackingNum;
+    }
+
     const { error } = await supabase
       .from("orders")
-      .update({ status: newStatus as any })
+      .update(updateData)
       .eq("id", orderId);
 
     if (!error) {
@@ -350,7 +372,9 @@ export default function AdminOrders() {
           payment_approved: `Payment approved for order #${orderId.slice(0, 8)}. Your order is now in production!`,
           payment_rejected: `Payment verification failed for order #${orderId.slice(0, 8)}. Please contact us or upload a new payment slip.`,
           ready_to_ship: `Great news! Your order #${orderId.slice(0, 8)} is ready to ship. Expect delivery soon!`,
-          shipped: `Your order #${orderId.slice(0, 8)} has been shipped! Track your delivery for updates.`,
+          shipped: trackingNum 
+            ? `Your order #${orderId.slice(0, 8)} has been shipped! Tracking: ${trackingNum}`
+            : `Your order #${orderId.slice(0, 8)} has been shipped! Track your delivery for updates.`,
         };
 
         try {
@@ -368,8 +392,38 @@ export default function AdminOrders() {
       }
 
       toast.success("Order status updated");
+      fetchOrders();
     } else {
       toast.error("Failed to update status");
+    }
+  };
+
+  const handleSaveTracking = async () => {
+    if (!trackingDialog) return;
+    
+    setIsSavingTracking(true);
+    await updateOrderStatus(
+      trackingDialog.orderId, 
+      "shipped", 
+      trackingDialog.order, 
+      trackingNumber.trim()
+    );
+    setIsSavingTracking(false);
+    setTrackingDialog(null);
+    setTrackingNumber("");
+  };
+
+  const handleUpdateTrackingNumber = async (orderId: string, newTracking: string) => {
+    const { error } = await supabase
+      .from("orders")
+      .update({ tracking_number: newTracking })
+      .eq("id", orderId);
+
+    if (!error) {
+      toast.success("Tracking number updated");
+      fetchOrders();
+    } else {
+      toast.error("Failed to update tracking number");
     }
   };
 
@@ -676,6 +730,7 @@ export default function AdminOrders() {
                   <TableHead>Total</TableHead>
                   <TableHead>Payment</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Tracking</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -795,6 +850,42 @@ export default function AdminOrders() {
                         {new Date(order.created_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
+                        {order.tracking_number ? (
+                          <div className="flex items-center gap-1">
+                            <Badge variant="outline" className="gap-1 text-xs">
+                              <Truck className="w-3 h-3" />
+                              {order.tracking_number}
+                            </Badge>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0"
+                              onClick={() => {
+                                setTrackingNumber(order.tracking_number || "");
+                                setTrackingDialog({ orderId: order.id, order });
+                              }}
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ) : (order.status === "shipped" || order.status === "completed") ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="gap-1 text-xs"
+                            onClick={() => {
+                              setTrackingNumber("");
+                              setTrackingDialog({ orderId: order.id, order });
+                            }}
+                          >
+                            <Truck className="w-3 h-3" />
+                            Add
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <div className="flex items-center gap-2">
                           <Button
                             size="sm"
@@ -823,7 +914,7 @@ export default function AdminOrders() {
                     </TableRow>
                     {expandedOrder === order.id && (
                       <TableRow className="bg-muted/50">
-                        <TableCell colSpan={9}>
+                        <TableCell colSpan={10}>
                           <div className="p-4 space-y-4">
                             <div className="flex justify-between items-start">
                               <div>
@@ -1320,6 +1411,45 @@ export default function AdminOrders() {
             }}>
               <DollarSign className="w-4 h-4 mr-2" />
               Set/Update Price
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Tracking Number Dialog */}
+      <Dialog open={!!trackingDialog} onOpenChange={(open) => !open && setTrackingDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Truck className="w-5 h-5" />
+              Add Tracking Number
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">
+              Order #{trackingDialog?.orderId.slice(0, 8)} will be marked as shipped.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="tracking">Tracking Number (optional)</Label>
+              <Input
+                id="tracking"
+                placeholder="Enter tracking number..."
+                value={trackingNumber}
+                onChange={(e) => setTrackingNumber(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTrackingDialog(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveTracking} disabled={isSavingTracking}>
+              {isSavingTracking ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <Truck className="w-4 h-4 mr-2" />
+              )}
+              Mark as Shipped
             </Button>
           </DialogFooter>
         </DialogContent>
