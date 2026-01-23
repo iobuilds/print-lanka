@@ -1,17 +1,23 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
 import { 
   Box, Upload, Loader2, CheckCircle, ChevronRight, 
-  Percent, AlertCircle, Trash2
+  Percent, AlertCircle, CalendarIcon, FileImage, X
 } from "lucide-react";
 import { formatPrice, MATERIALS, QUALITY_PRESETS } from "@/lib/constants";
 import { toast } from "sonner";
+import { format, addDays } from "date-fns";
+import { cn } from "@/lib/utils";
+import { getOrderData, clearOrderData } from "@/lib/orderStore";
 
 interface ModelConfig {
   material: string;
@@ -37,27 +43,61 @@ interface CouponData {
 
 export default function Checkout() {
   const navigate = useNavigate();
-  const location = useLocation();
   const { user, profile } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<number, number>>({});
   const [orderSubmitted, setOrderSubmitted] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState<Date | undefined>(
+    addDays(new Date(), 7)
+  );
+  const [paymentSlip, setPaymentSlip] = useState<File | null>(null);
+  const [paymentSlipPreview, setPaymentSlipPreview] = useState<string | null>(null);
 
-  const models: UploadedModel[] = location.state?.models || [];
-  const coupon: CouponData | null = location.state?.coupon || null;
+  // Get order data from memory store
+  const orderData = getOrderData();
+  const models: UploadedModel[] = orderData?.models || [];
+  const coupon: CouponData | null = orderData?.coupon || null;
 
   useEffect(() => {
     if (!user) {
-      navigate("/login", { state: { redirect: "/checkout", models, coupon } });
+      navigate("/login", { state: { redirectToCheckout: true } });
     }
-  }, [user, navigate, models, coupon]);
+  }, [user, navigate]);
 
   useEffect(() => {
     if (models.length === 0 && !orderSubmitted) {
       navigate("/");
     }
-  }, [models, navigate, orderSubmitted]);
+  }, [models.length, navigate, orderSubmitted]);
+
+  const handlePaymentSlipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
+        toast.error("Please upload an image or PDF file");
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("File size must be less than 10MB");
+        return;
+      }
+      setPaymentSlip(file);
+      if (file.type.startsWith('image/')) {
+        setPaymentSlipPreview(URL.createObjectURL(file));
+      } else {
+        setPaymentSlipPreview(null);
+      }
+    }
+  };
+
+  const removePaymentSlip = () => {
+    setPaymentSlip(null);
+    if (paymentSlipPreview) {
+      URL.revokeObjectURL(paymentSlipPreview);
+      setPaymentSlipPreview(null);
+    }
+  };
 
   const handleSubmitOrder = async () => {
     if (!user || models.length === 0) return;
@@ -65,13 +105,16 @@ export default function Checkout() {
     setIsSubmitting(true);
 
     try {
-      // 1. Create the order
+      // 1. Create the order with expected delivery date
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .insert({
           user_id: user.id,
           status: "pending_review",
-          notes: coupon ? `Coupon: ${coupon.code}` : null,
+          notes: [
+            coupon ? `Coupon: ${coupon.code}` : null,
+            expectedDeliveryDate ? `Expected delivery: ${format(expectedDeliveryDate, 'PPP')}` : null
+          ].filter(Boolean).join(' | ') || null,
         })
         .select()
         .single();
@@ -84,7 +127,6 @@ export default function Checkout() {
         setUploadProgress((prev) => ({ ...prev, [i]: 0 }));
 
         // Upload file to storage
-        const fileExt = model.file.name.split(".").pop();
         const filePath = `${user.id}/${order.id}/${Date.now()}_${model.file.name}`;
 
         const { error: uploadError } = await supabase.storage
@@ -114,7 +156,30 @@ export default function Checkout() {
         setUploadProgress((prev) => ({ ...prev, [i]: 100 }));
       }
 
-      // 3. Mark coupon as used if applicable
+      // 3. Upload payment slip if provided
+      if (paymentSlip) {
+        const slipPath = `${user.id}/${order.id}/payment_slip_${Date.now()}_${paymentSlip.name}`;
+        
+        const { error: slipUploadError } = await supabase.storage
+          .from("payment-slips")
+          .upload(slipPath, paymentSlip);
+
+        if (slipUploadError) throw slipUploadError;
+
+        // Create payment slip record
+        const { error: slipRecordError } = await supabase
+          .from("payment_slips")
+          .insert({
+            order_id: order.id,
+            user_id: user.id,
+            file_name: paymentSlip.name,
+            file_path: slipPath,
+          });
+
+        if (slipRecordError) throw slipRecordError;
+      }
+
+      // 4. Mark coupon as used if applicable
       if (coupon) {
         await supabase
           .from("user_coupons")
@@ -126,6 +191,9 @@ export default function Checkout() {
           .eq("id", coupon.user_coupon_id);
       }
 
+      // Clear order data from memory
+      clearOrderData();
+      
       setOrderId(order.id);
       setOrderSubmitted(true);
       toast.success("Order submitted successfully!");
@@ -167,6 +235,9 @@ export default function Checkout() {
       </Layout>
     );
   }
+
+  // Minimum date is 3 days from now
+  const minDeliveryDate = addDays(new Date(), 3);
 
   return (
     <Layout>
@@ -236,6 +307,114 @@ export default function Checkout() {
                 </CardContent>
               </Card>
 
+              {/* Expected Delivery Date */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <CalendarIcon className="w-5 h-5" />
+                    Expected Delivery Date
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <Label className="text-sm text-muted-foreground">
+                      When would you like to receive your order?
+                    </Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !expectedDeliveryDate && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {expectedDeliveryDate ? format(expectedDeliveryDate, "PPP") : <span>Pick a date</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={expectedDeliveryDate}
+                          onSelect={setExpectedDeliveryDate}
+                          disabled={(date) => date < minDeliveryDate}
+                          initialFocus
+                          className={cn("p-3 pointer-events-auto")}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <p className="text-xs text-muted-foreground">
+                      Minimum 3 days from today. Actual delivery date may vary based on complexity.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Payment Slip Upload */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileImage className="w-5 h-5" />
+                    Payment Slip (Optional)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      You can upload your bank transfer receipt now or later from your dashboard after the order is priced.
+                    </p>
+                    
+                    {paymentSlip ? (
+                      <div className="flex items-center gap-3 p-3 border rounded-lg bg-muted/50">
+                        {paymentSlipPreview ? (
+                          <img 
+                            src={paymentSlipPreview} 
+                            alt="Payment slip preview" 
+                            className="w-16 h-16 object-cover rounded"
+                          />
+                        ) : (
+                          <div className="w-16 h-16 bg-primary/10 rounded flex items-center justify-center">
+                            <FileImage className="w-8 h-8 text-primary" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{paymentSlip.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {(paymentSlip.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={removePaymentSlip}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                        <input
+                          type="file"
+                          id="paymentSlip"
+                          accept="image/*,application/pdf"
+                          onChange={handlePaymentSlipChange}
+                          className="hidden"
+                        />
+                        <label htmlFor="paymentSlip" className="cursor-pointer">
+                          <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                          <p className="text-sm font-medium">Click to upload payment slip</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            PNG, JPG, or PDF up to 10MB
+                          </p>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* Delivery Info */}
               <Card>
                 <CardHeader>
@@ -262,7 +441,7 @@ export default function Checkout() {
 
             {/* Order Summary */}
             <div className="space-y-4">
-              <Card>
+              <Card className="sticky top-4">
                 <CardHeader>
                   <CardTitle>Order Summary</CardTitle>
                 </CardHeader>
@@ -275,6 +454,13 @@ export default function Checkout() {
                     <span className="text-muted-foreground">Total Quantity</span>
                     <span>{models.reduce((sum, m) => sum + m.config.quantity, 0)} piece(s)</span>
                   </div>
+
+                  {expectedDeliveryDate && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Expected by</span>
+                      <span>{format(expectedDeliveryDate, "MMM d, yyyy")}</span>
+                    </div>
+                  )}
 
                   {coupon && (
                     <>
@@ -291,6 +477,13 @@ export default function Checkout() {
                         </span>
                       </div>
                     </>
+                  )}
+
+                  {paymentSlip && (
+                    <div className="flex items-center gap-2 text-sm bg-primary/10 p-2 rounded">
+                      <CheckCircle className="w-4 h-4 text-primary" />
+                      <span className="text-primary font-medium">Payment slip attached</span>
+                    </div>
                   )}
 
                   <Separator />
