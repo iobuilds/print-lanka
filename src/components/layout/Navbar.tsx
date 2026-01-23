@@ -52,6 +52,9 @@ export function Navbar() {
             <Link to="/pricing" className="text-muted-foreground hover:text-foreground transition-colors">
               Pricing Guide
             </Link>
+            <Link to="/coupons" className="text-muted-foreground hover:text-foreground transition-colors">
+              Coupons
+            </Link>
             {user && (
               <Link to="/dashboard" className="text-muted-foreground hover:text-foreground transition-colors">
                 My Dashboard
@@ -155,6 +158,13 @@ export function Navbar() {
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Pricing Guide
+              </Link>
+              <Link
+                to="/coupons"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Coupons
               </Link>
               {user ? (
                 <>
