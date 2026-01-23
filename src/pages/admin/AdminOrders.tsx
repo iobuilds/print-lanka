@@ -47,6 +47,13 @@ interface Profile {
   email: string | null;
 }
 
+interface AppliedCoupon {
+  id: string;
+  code: string;
+  discount_type: string;
+  discount_value: number;
+}
+
 interface Order {
   id: string;
   status: string;
@@ -61,6 +68,7 @@ interface Order {
   profile: Profile | null;
   order_items: OrderItem[];
   payment_slips: PaymentSlip[];
+  applied_coupon?: AppliedCoupon | null;
 }
 
 const statusOptions = Object.keys(ORDER_STATUSES);
@@ -226,7 +234,9 @@ export default function AdminOrders() {
       }
 
       const userIds = [...new Set(ordersData?.map(o => o.user_id) || [])];
+      const orderIds = ordersData?.map(o => o.id) || [];
       
+      // Fetch profiles
       const { data: profilesData, error: profilesError } = await supabase
         .from("profiles")
         .select("user_id, first_name, last_name, phone, address, email")
@@ -235,6 +245,33 @@ export default function AdminOrders() {
       if (profilesError) {
         console.error("Error fetching profiles:", profilesError);
       }
+
+      // Fetch applied coupons for all orders
+      const { data: appliedCouponsData } = await supabase
+        .from("user_coupons")
+        .select(`
+          used_on_order_id,
+          coupons (
+            id,
+            code,
+            discount_type,
+            discount_value
+          )
+        `)
+        .in("used_on_order_id", orderIds)
+        .not("used_on_order_id", "is", null);
+
+      const couponMap = new Map<string, AppliedCoupon>();
+      appliedCouponsData?.forEach((uc: any) => {
+        if (uc.used_on_order_id && uc.coupons) {
+          couponMap.set(uc.used_on_order_id, {
+            id: uc.coupons.id,
+            code: uc.coupons.code,
+            discount_type: uc.coupons.discount_type,
+            discount_value: uc.coupons.discount_value,
+          });
+        }
+      });
 
       const profileMap = new Map<string, Profile>();
       profilesData?.forEach(p => {
@@ -252,6 +289,7 @@ export default function AdminOrders() {
         profile: profileMap.get(order.user_id) || null,
         payment_slips: order.payment_slips || [],
         order_items: order.order_items || [],
+        applied_coupon: couponMap.get(order.id) || null,
       }));
 
       setOrders(mappedOrders);
@@ -350,6 +388,22 @@ export default function AdminOrders() {
     return itemsTotal + deliveryCharge;
   };
 
+  // Calculate discount from applied coupon
+  const calculateDiscount = (subtotal: number, coupon: AppliedCoupon | null | undefined): number => {
+    if (!coupon) return 0;
+    if (coupon.discount_type === "percentage") {
+      return Math.round((subtotal * coupon.discount_value) / 100);
+    }
+    return coupon.discount_value; // Fixed amount
+  };
+
+  // Get the final price after discount
+  const calculateFinalTotal = () => {
+    const subtotal = calculateTotal();
+    const discount = calculateDiscount(subtotal, pricingOrder?.applied_coupon);
+    return Math.max(0, subtotal - discount);
+  };
+
   const handleSavePrices = async () => {
     if (!pricingOrder) return;
 
@@ -364,12 +418,14 @@ export default function AdminOrders() {
         if (error) throw error;
       }
 
-      const total = calculateTotal();
+      const subtotal = calculateTotal();
+      const discount = calculateDiscount(subtotal, pricingOrder.applied_coupon);
+      const finalTotal = Math.max(0, subtotal - discount);
       const isFirstPricing = pricingOrder.status === "pending_review";
       
-      // Only change status and send notification if this is the first pricing
+      // Save the final price (after discount) - this is what customer actually pays
       const updateData: any = {
-        total_price: total,
+        total_price: finalTotal,
         delivery_charge: deliveryCharge,
       };
 
@@ -388,10 +444,17 @@ export default function AdminOrders() {
       // Only send SMS notification for first pricing
       if (isFirstPricing && pricingOrder.profile?.phone) {
         try {
+          // Build message with discount info if applicable
+          let message = `Your order #${pricingOrder.id.slice(0, 8)} has been priced at ${formatPrice(finalTotal)}.`;
+          if (discount > 0 && pricingOrder.applied_coupon) {
+            message = `Your order #${pricingOrder.id.slice(0, 8)} has been priced at ${formatPrice(finalTotal)} (Coupon ${pricingOrder.applied_coupon.code}: -${formatPrice(discount)} applied).`;
+          }
+          message += " Please upload your bank transfer slip to proceed.";
+
           await supabase.functions.invoke("send-sms", {
             body: {
               phone: pricingOrder.profile.phone,
-              message: `Your order #${pricingOrder.id.slice(0, 8)} has been priced at ${formatPrice(total)}. Please upload your bank transfer slip to proceed.`,
+              message,
               order_id: pricingOrder.id,
               user_id: pricingOrder.user_id,
             },
@@ -761,11 +824,21 @@ export default function AdminOrders() {
                                 </div>
                               ))}
                             </div>
-                            {order.total_price && (
-                              <div className="flex justify-end gap-4 text-sm">
+                            {order.total_price != null && (
+                              <div className="flex flex-col items-end gap-1 text-sm">
                                 <span className="text-muted-foreground">
                                   Delivery: {formatPrice(order.delivery_charge || 0)}
                                 </span>
+                                {order.applied_coupon && (
+                                  <span className="text-green-600 flex items-center gap-1">
+                                    <Tag className="w-3 h-3" />
+                                    Coupon: {order.applied_coupon.code} (
+                                    {order.applied_coupon.discount_type === "percentage"
+                                      ? `${order.applied_coupon.discount_value}%`
+                                      : formatPrice(order.applied_coupon.discount_value)
+                                    } off)
+                                  </span>
+                                )}
                                 <span className="font-bold">
                                   Total: {formatPrice(order.total_price)}
                                 </span>
@@ -853,27 +926,55 @@ export default function AdminOrders() {
                 </div>
               </div>
 
-              {/* Coupon Applied Info */}
-              {pricingOrder.notes?.includes("Coupon:") && (
-                <div className="flex items-center justify-between p-3 border rounded-lg bg-success/10 border-success/20">
-                  <div className="flex items-center gap-2 text-success">
-                    <Tag className="w-4 h-4" />
-                    <span className="font-medium text-sm">Coupon Applied</span>
-                    <Badge variant="secondary" className="text-success bg-success/20">
-                      {pricingOrder.notes.match(/Coupon: (\w+)/)?.[1] || "Applied"}
+              {/* Coupon Applied Info with Price Breakdown */}
+              {pricingOrder.applied_coupon && (
+                <div className="p-4 border rounded-lg bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Tag className="w-4 h-4 text-green-600" />
+                    <span className="font-medium text-sm text-green-700 dark:text-green-400">Coupon Applied</span>
+                    <Badge className="bg-green-500 text-white">
+                      {pricingOrder.applied_coupon.code}
                     </Badge>
                   </div>
-                  <span className="text-sm text-muted-foreground">
-                    Discount will be applied to final total
-                  </span>
+                  <p className="text-sm text-green-600 dark:text-green-400">
+                    {pricingOrder.applied_coupon.discount_type === "percentage"
+                      ? `${pricingOrder.applied_coupon.discount_value}% discount`
+                      : `${formatPrice(pricingOrder.applied_coupon.discount_value)} discount`
+                    } will be applied to the final total
+                  </p>
                 </div>
               )}
 
-              <div className="flex justify-between items-center p-4 bg-primary/10 rounded-lg">
-                <span className="font-semibold">Total</span>
-                <span className="text-xl font-bold text-primary">
-                  {formatPrice(calculateTotal())}
-                </span>
+              {/* Price Summary */}
+              <div className="space-y-2 p-4 bg-muted/50 rounded-lg">
+                {/* Subtotal */}
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">Subtotal (Items + Delivery)</span>
+                  <span className="font-medium">{formatPrice(calculateTotal())}</span>
+                </div>
+
+                {/* Discount row - only show if coupon applied */}
+                {pricingOrder.applied_coupon && (
+                  <div className="flex justify-between items-center text-sm text-green-600">
+                    <span className="flex items-center gap-1">
+                      <Percent className="w-3 h-3" />
+                      Coupon Discount ({pricingOrder.applied_coupon.code})
+                    </span>
+                    <span className="font-medium">
+                      -{formatPrice(calculateDiscount(calculateTotal(), pricingOrder.applied_coupon))}
+                    </span>
+                  </div>
+                )}
+
+                <Separator className="my-2" />
+
+                {/* Final Total */}
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold text-lg">Customer Pays</span>
+                  <span className="text-2xl font-bold text-primary">
+                    {formatPrice(calculateFinalTotal())}
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -1081,35 +1182,50 @@ export default function AdminOrders() {
                 <Separator />
 
                 {/* Pricing Summary */}
-                {detailsOrder.total_price && (
+                {detailsOrder.total_price != null && (
                   <div>
                     <h4 className="font-semibold mb-3">Pricing Summary</h4>
                     <div className="bg-muted/50 p-4 rounded-lg space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Items Total:</span>
-                        <span>{formatPrice((detailsOrder.total_price || 0) - (detailsOrder.delivery_charge || 0))}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Delivery Charge:</span>
-                        <span>{formatPrice(detailsOrder.delivery_charge || 0)}</span>
-                      </div>
-                      {/* Show coupon if applied */}
-                      {detailsOrder.notes?.includes("Coupon:") && (
-                        <div className="flex justify-between text-sm text-success">
-                          <span className="flex items-center gap-1">
-                            <Tag className="w-3 h-3" />
-                            Coupon Applied:
-                          </span>
-                          <span className="font-medium">
-                            {detailsOrder.notes.match(/Coupon: (\w+)/)?.[1] || "Applied"}
-                          </span>
-                        </div>
-                      )}
-                      <Separator />
-                      <div className="flex justify-between font-bold">
-                        <span>Total:</span>
-                        <span className="text-primary">{formatPrice(detailsOrder.total_price)}</span>
-                      </div>
+                      {/* Calculate items total (stored total_price is already after discount) */}
+                      {(() => {
+                        const itemsTotal = detailsOrder.order_items.reduce((sum, item) => sum + (item.price || 0), 0);
+                        const delivery = detailsOrder.delivery_charge || 0;
+                        const subtotal = itemsTotal + delivery;
+                        const discount = detailsOrder.applied_coupon
+                          ? detailsOrder.applied_coupon.discount_type === "percentage"
+                            ? Math.round((subtotal * detailsOrder.applied_coupon.discount_value) / 100)
+                            : detailsOrder.applied_coupon.discount_value
+                          : 0;
+                        
+                        return (
+                          <>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Items Total:</span>
+                              <span>{formatPrice(itemsTotal)}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Delivery Charge:</span>
+                              <span>{formatPrice(delivery)}</span>
+                            </div>
+                            {detailsOrder.applied_coupon && (
+                              <div className="flex justify-between text-sm text-green-600">
+                                <span className="flex items-center gap-1">
+                                  <Tag className="w-3 h-3" />
+                                  Coupon ({detailsOrder.applied_coupon.code}):
+                                </span>
+                                <span className="font-medium">
+                                  -{formatPrice(discount)}
+                                </span>
+                              </div>
+                            )}
+                            <Separator />
+                            <div className="flex justify-between font-bold">
+                              <span>Customer Pays:</span>
+                              <span className="text-primary text-lg">{formatPrice(detailsOrder.total_price)}</span>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
