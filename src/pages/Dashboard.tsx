@@ -228,13 +228,16 @@ export default function Dashboard() {
       .order("assigned_at", { ascending: false });
 
     if (!error && data) {
-      const mappedCoupons = data.map((uc: any) => ({
-        id: uc.id,
-        is_used: uc.is_used,
-        used_at: uc.used_at,
-        assigned_at: uc.assigned_at,
-        coupon: uc.coupon
-      }));
+      // Filter out coupons where the coupon data is null (deleted coupons)
+      const mappedCoupons = data
+        .filter((uc: any) => uc.coupon !== null)
+        .map((uc: any) => ({
+          id: uc.id,
+          is_used: uc.is_used,
+          used_at: uc.used_at,
+          assigned_at: uc.assigned_at,
+          coupon: uc.coupon
+        }));
       setCoupons(mappedCoupons);
     }
     setIsLoadingCoupons(false);
