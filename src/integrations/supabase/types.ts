@@ -51,6 +51,7 @@ export type Database = {
           discount_value: number
           id: string
           is_active: boolean | null
+          is_public: boolean | null
           max_uses: number | null
           min_order_value: number | null
           uses_per_user: number | null
@@ -66,6 +67,7 @@ export type Database = {
           discount_value: number
           id?: string
           is_active?: boolean | null
+          is_public?: boolean | null
           max_uses?: number | null
           min_order_value?: number | null
           uses_per_user?: number | null
@@ -81,6 +83,7 @@ export type Database = {
           discount_value?: number
           id?: string
           is_active?: boolean | null
+          is_public?: boolean | null
           max_uses?: number | null
           min_order_value?: number | null
           uses_per_user?: number | null

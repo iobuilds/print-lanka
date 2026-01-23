@@ -136,6 +136,12 @@ export default function AdminCoupons() {
 
     setIsAssigning(true);
     try {
+      // Mark the coupon as private (not public) since it's being assigned to a specific user
+      await supabase
+        .from("coupons")
+        .update({ is_public: false })
+        .eq("id", selectedCoupon.id);
+
       const { error } = await supabase.from("user_coupons").insert({
         user_id: selectedUserId,
         coupon_id: selectedCoupon.id,
@@ -152,6 +158,7 @@ export default function AdminCoupons() {
         toast.success("Coupon assigned successfully");
         setAssignDialogOpen(false);
         setSelectedUserId("");
+        fetchCoupons(); // Refresh to show updated is_public status
       }
     } catch (error: any) {
       toast.error(error.message || "Failed to assign coupon");
