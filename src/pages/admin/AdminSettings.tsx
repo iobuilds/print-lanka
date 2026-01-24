@@ -759,123 +759,33 @@ export default function AdminSettings() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <MessageSquare className="w-5 h-5" />
-                SMS Provider Configuration
+                SMS Configuration
               </CardTitle>
               <CardDescription>
-                Configure SMS notifications for order status updates
+                SMS notifications are configured via Text.lk API
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="sms-enabled">Enable SMS Notifications</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Send SMS alerts for order status changes
-                  </p>
-                </div>
-                <Switch
-                  id="sms-enabled"
-                  checked={smsConfig.enabled}
-                  onCheckedChange={(checked) => 
-                    setSmsConfig({ ...smsConfig, enabled: checked })
-                  }
-                />
-              </div>
+              <Alert>
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>Text.lk API Connected</strong>
+                  <br />
+                  <span className="text-muted-foreground">
+                    Sender ID: <strong>IO Builds</strong> | API: v3
+                  </span>
+                </AlertDescription>
+              </Alert>
 
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>SMS Provider</Label>
-                  <Select
-                    value={smsConfig.provider}
-                    onValueChange={(v) => setSmsConfig({ ...smsConfig, provider: v })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select provider" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="textlk">Text.lk (Sri Lanka)</SelectItem>
-                      <SelectItem value="dialog">Dialog (Sri Lanka)</SelectItem>
-                      <SelectItem value="mobitel">Mobitel (Sri Lanka)</SelectItem>
-                      <SelectItem value="twilio">Twilio (International)</SelectItem>
-                      <SelectItem value="generic">Generic HTTP API</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="api-key">
-                      {smsConfig.provider === 'textlk' ? 'API Token' : 
-                       smsConfig.provider === 'twilio' ? 'Account SID' : 'API Key'}
-                    </Label>
-                    <Input
-                      id="api-key"
-                      type="password"
-                      value={smsConfig.api_key}
-                      onChange={(e) => 
-                        setSmsConfig({ ...smsConfig, api_key: e.target.value })
-                      }
-                      placeholder={smsConfig.provider === 'textlk' ? 'e.g., 3074|Rr1li91D...' : 'Enter API key'}
-                    />
-                  </div>
-
-                  {smsConfig.provider !== 'textlk' && (
-                    <div className="space-y-2">
-                      <Label htmlFor="api-secret">API Secret / Auth Token</Label>
-                      <Input
-                        id="api-secret"
-                        type="password"
-                        value={smsConfig.api_secret}
-                        onChange={(e) => 
-                          setSmsConfig({ ...smsConfig, api_secret: e.target.value })
-                        }
-                        placeholder="Enter API secret"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="sender-id">Sender ID</Label>
-                    <Input
-                      id="sender-id"
-                      value={smsConfig.sender_id}
-                      onChange={(e) => 
-                        setSmsConfig({ ...smsConfig, sender_id: e.target.value })
-                      }
-                      placeholder={smsConfig.provider === 'textlk' ? 'e.g., TextLKDemo' : 'e.g., Print3D'}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      The name shown as the sender
-                    </p>
-                  </div>
-
-                  {(smsConfig.provider === "generic" || smsConfig.provider === "dialog" || smsConfig.provider === "mobitel") && (
-                    <div className="space-y-2">
-                      <Label htmlFor="api-url">API URL (Optional)</Label>
-                      <Input
-                        id="api-url"
-                        value={smsConfig.api_url}
-                        onChange={(e) => 
-                          setSmsConfig({ ...smsConfig, api_url: e.target.value })
-                        }
-                        placeholder="https://api.example.com/send"
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <Button onClick={handleSaveSmsConfig} disabled={isSavingSms}>
-                  {isSavingSms ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Save className="w-4 h-4 mr-2" />
-                  )}
-                  Save SMS Settings
-                </Button>
+              <div className="space-y-3">
+                <h4 className="font-medium">SMS notifications are sent when:</h4>
+                <ul className="space-y-2 text-sm text-muted-foreground list-disc list-inside">
+                  <li>Order is priced and awaiting payment</li>
+                  <li>Payment is approved</li>
+                  <li>Payment is rejected</li>
+                  <li>Order is ready to ship</li>
+                  <li>Order is shipped (with tracking number)</li>
+                </ul>
               </div>
             </CardContent>
           </Card>
@@ -894,7 +804,7 @@ export default function AdminSettings() {
             <CardContent>
               <div className="flex gap-4">
                 <Input
-                  placeholder="+94771234567"
+                  placeholder="0771234567"
                   value={testPhone}
                   onChange={(e) => setTestPhone(e.target.value)}
                   className="max-w-xs"
@@ -902,21 +812,19 @@ export default function AdminSettings() {
                 <Button 
                   variant="outline" 
                   onClick={handleTestSms}
-                  disabled={isTesting || !smsConfig.enabled}
+                  disabled={isTesting || !testPhone}
                 >
                   {isTesting ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   ) : (
                     <TestTube className="w-4 h-4 mr-2" />
                   )}
-                  Send Test
+                  Send Test SMS
                 </Button>
               </div>
-              {!smsConfig.enabled && (
-                <p className="text-sm text-muted-foreground mt-2">
-                  Enable SMS notifications to send test messages
-                </p>
-              )}
+              <p className="text-sm text-muted-foreground mt-2">
+                Enter a Sri Lankan phone number (e.g., 0771234567 or 94771234567)
+              </p>
             </CardContent>
           </Card>
         </TabsContent>
