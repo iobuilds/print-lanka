@@ -23,58 +23,18 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get SMS settings from system_settings
-    const { data: smsSettings, error: settingsError } = await supabase
-      .from('system_settings')
-      .select('value')
-      .eq('key', 'sms_config')
-      .single();
-
-    if (settingsError || !smsSettings) {
-      console.error('SMS settings not configured:', settingsError);
+    // Get API token from secrets
+    const apiToken = Deno.env.get('TEXTLK_API_TOKEN');
+    
+    if (!apiToken) {
+      console.error('TEXTLK_API_TOKEN not configured');
       return new Response(
-        JSON.stringify({ error: 'SMS settings not configured' }),
+        JSON.stringify({ error: 'SMS API token not configured' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const config = smsSettings.value as {
-      provider: string;
-      api_key?: string;
-      api_secret?: string;
-      sender_id?: string;
-      api_url?: string;
-      enabled: boolean;
-    };
-
-    if (!config.enabled) {
-      console.log('SMS notifications disabled');
-      return new Response(
-        JSON.stringify({ success: false, message: 'SMS notifications disabled' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     const { phone, message, order_id, user_id }: SMSRequest = await req.json();
-
-    // Log the notification attempt
-    const { data: notification, error: notifError } = await supabase
-      .from('notifications')
-      .insert({
-        phone,
-        message,
-        order_id,
-        user_id,
-        status: 'pending'
-      })
-      .select()
-      .single();
-
-    if (notifError) {
-      console.error('Failed to log notification:', notifError);
-    }
-
-    let smsResult = { success: false, response: '' };
 
     // Format phone number to Sri Lankan international format
     const formatSriLankanPhone = (phoneNum: string): string => {
@@ -90,129 +50,70 @@ serve(async (req) => {
       return cleaned;
     };
 
-    // Send SMS based on provider
-    if (config.provider === 'textlk') {
-      // Text.lk (Sri Lanka) SMS API
-      const textlkUrl = 'https://app.text.lk/api/http/sms/send';
-      const formattedPhone = formatSriLankanPhone(phone);
-      
-      console.log('Sending SMS to:', formattedPhone, 'Message:', message.substring(0, 50) + '...');
-      
-      const response = await fetch(textlkUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({
-          api_token: config.api_key,
-          recipient: formattedPhone,
-          sender_id: config.sender_id || 'Print3D',
-          type: 'plain',
-          message: message,
-        }),
-      });
+    const formattedPhone = formatSriLankanPhone(phone);
+    
+    console.log('Sending SMS via Text.lk v3 API');
+    console.log('To:', formattedPhone);
+    console.log('Message:', message.substring(0, 50) + '...');
 
-      const result = await response.json();
-      console.log('Text.lk response:', JSON.stringify(result));
-      smsResult = { success: response.ok && result.status === 'success', response: JSON.stringify(result) };
-    } else if (config.provider === 'twilio') {
-      const twilioAccountSid = config.api_key;
-      const twilioAuthToken = config.api_secret;
-      const twilioFrom = config.sender_id;
+    // Log the notification attempt
+    const { data: notification, error: notifError } = await supabase
+      .from('notifications')
+      .insert({
+        phone: formattedPhone,
+        message,
+        order_id,
+        user_id,
+        status: 'pending'
+      })
+      .select()
+      .single();
 
-      const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
-      
-      const response = await fetch(twilioUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          To: phone,
-          From: twilioFrom || '',
-          Body: message,
-        }),
-      });
-
-      const result = await response.json();
-      smsResult = { success: response.ok, response: JSON.stringify(result) };
-    } else if (config.provider === 'dialog') {
-      // Dialog Axiata (Sri Lanka) SMS API
-      const dialogUrl = config.api_url || 'https://e-sms.dialog.lk/api/v1/message/send';
-      
-      const response = await fetch(dialogUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.api_key}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          msisdn: phone.replace('+', ''),
-          message: message,
-          sourceAddress: config.sender_id || 'Print3D',
-        }),
-      });
-
-      const result = await response.text();
-      smsResult = { success: response.ok, response: result };
-    } else if (config.provider === 'mobitel') {
-      // Mobitel (Sri Lanka) SMS API
-      const mobitelUrl = config.api_url || 'https://sms.mobitel.lk/api/v1/send';
-      
-      const response = await fetch(mobitelUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.api_key}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          to: phone,
-          message: message,
-          from: config.sender_id,
-        }),
-      });
-
-      const result = await response.text();
-      smsResult = { success: response.ok, response: result };
-    } else if (config.provider === 'generic') {
-      // Generic HTTP API
-      const genericUrl = config.api_url;
-      if (!genericUrl) {
-        throw new Error('API URL not configured for generic provider');
-      }
-
-      const response = await fetch(genericUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.api_key}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          phone: phone,
-          message: message,
-          sender_id: config.sender_id,
-        }),
-      });
-
-      const result = await response.text();
-      smsResult = { success: response.ok, response: result };
+    if (notifError) {
+      console.error('Failed to log notification:', notifError);
     }
+
+    // Send SMS using Text.lk v3 API with Bearer token authentication
+    const textlkUrl = 'https://app.text.lk/api/v3/sms/send';
+    
+    const response = await fetch(textlkUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        recipient: formattedPhone,
+        sender_id: 'IO Builds',
+        type: 'plain',
+        message: message,
+      }),
+    });
+
+    const result = await response.json();
+    console.log('Text.lk v3 API response:', JSON.stringify(result));
+    
+    // Check for success - Text.lk v3 returns status in different format
+    const isSuccess = response.ok && (result.status === 'success' || result.data?.id);
 
     // Update notification status
     if (notification) {
       await supabase
         .from('notifications')
         .update({
-          status: smsResult.success ? 'sent' : 'failed',
-          provider_response: smsResult.response,
+          status: isSuccess ? 'sent' : 'failed',
+          provider_response: JSON.stringify(result),
         })
         .eq('id', notification.id);
     }
 
     return new Response(
-      JSON.stringify({ success: smsResult.success, message: 'SMS processed' }),
+      JSON.stringify({ 
+        success: isSuccess, 
+        message: isSuccess ? 'SMS sent successfully' : 'SMS sending failed',
+        response: result 
+      }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error: unknown) {
