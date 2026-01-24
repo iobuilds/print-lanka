@@ -24,7 +24,7 @@ export default function Login() {
 
     try {
       // Format phone as email for Supabase auth
-      const email = `${phone.replace(/[^0-9]/g, "")}@print3dlanka.local`;
+      const email = `${phone.replace(/[^0-9]/g, "")}@iobuilds.local`;
       
       const { error } = await supabase.auth.signInWithPassword({
         email,
@@ -51,7 +51,7 @@ export default function Login() {
               <Box className="w-8 h-8 text-primary-foreground" />
             </div>
             <CardTitle className="font-display text-2xl">Welcome Back</CardTitle>
-            <CardDescription>Sign in to your Print3D Lanka account</CardDescription>
+            <CardDescription>Sign in to your IO Builds account</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">

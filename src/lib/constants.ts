@@ -1,4 +1,4 @@
-// Print3D Lanka Constants
+// IO Builds 3D Print Service Constants
 
 export const CURRENCY = "LKR";
 export const CURRENCY_SYMBOL = "Rs.";

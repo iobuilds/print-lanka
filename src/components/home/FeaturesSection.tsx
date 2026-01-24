@@ -46,7 +46,7 @@ export function FeaturesSection() {
       <div className="container mx-auto px-4">
         <div className="text-center mb-16">
           <h2 className="font-display text-4xl md:text-5xl font-bold mb-4">
-            Why Choose <span className="text-primary">Print3D Lanka</span>
+            Why Choose <span className="text-primary">IO Builds</span>
           </h2>
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
             Professional 3D printing services tailored for Sri Lankan customers
