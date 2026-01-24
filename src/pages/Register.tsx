@@ -42,7 +42,7 @@ export default function Register() {
 
     try {
       const phoneDigits = formData.phone.replace(/[^0-9]/g, "");
-      const email = `${phoneDigits}@print3dlanka.local`;
+      const email = `${phoneDigits}@iobuilds.local`;
 
       const { error } = await supabase.auth.signUp({
         email,
@@ -78,7 +78,7 @@ export default function Register() {
               <Box className="w-8 h-8 text-primary-foreground" />
             </div>
             <CardTitle className="font-display text-2xl">Create Account</CardTitle>
-            <CardDescription>Join Print3D Lanka and start printing</CardDescription>
+            <CardDescription>Join IO Builds and start printing</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">

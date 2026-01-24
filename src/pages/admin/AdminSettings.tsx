@@ -216,7 +216,7 @@ export default function AdminSettings() {
       const { data, error } = await supabase.functions.invoke("send-sms", {
         body: {
           phone: testPhone,
-          message: "This is a test message from Print3D Lanka. Your SMS notifications are working!",
+          message: "This is a test message from IO Builds 3D print service. Your SMS notifications are working!",
           user_id: (await supabase.auth.getUser()).data.user?.id,
         },
       });
@@ -342,7 +342,7 @@ export default function AdminSettings() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `print3d-backup-${new Date().toISOString().split("T")[0]}.json`;
+      a.download = `iobuilds-backup-${new Date().toISOString().split("T")[0]}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
