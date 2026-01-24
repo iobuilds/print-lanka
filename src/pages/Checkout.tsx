@@ -228,6 +228,21 @@ export default function Checkout() {
       // Clear order data from memory
       clearOrderData();
       
+      // Notify admins about new order
+      try {
+        await supabase.functions.invoke("send-sms", {
+          body: {
+            phone: "0717367497", // Admin phone number
+            message: `New order #${order.id.slice(0, 8)} received from ${profile?.first_name || 'Customer'}! ${models.length} item(s). Please review and price.`,
+            order_id: order.id,
+            user_id: user.id,
+          },
+        });
+      } catch (smsError) {
+        console.error("Failed to send admin notification:", smsError);
+        // Don't fail the order if SMS fails
+      }
+      
       setOrderId(order.id);
       setOrderSubmitted(true);
       toast.success("Order submitted successfully!");
