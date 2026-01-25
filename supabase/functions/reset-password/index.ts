@@ -24,6 +24,8 @@ serve(async (req) => {
 
     const { phone, new_password, session_id }: ResetRequest = await req.json();
 
+    console.log(`Reset password request for phone: ${phone}, session: ${session_id}`);
+
     if (!phone || !new_password || !session_id) {
       return new Response(
         JSON.stringify({ error: 'Phone, new password, and session ID are required' }),
@@ -51,22 +53,33 @@ serve(async (req) => {
     };
 
     const formattedPhone = formatPhone(phone);
+    console.log(`Formatted phone: ${formattedPhone}`);
 
-    // Verify the OTP session is valid and verified
+    // Verify the OTP session is valid and verified using maybeSingle
     const { data: session, error: sessionError } = await supabase
       .from('otp_sessions')
       .select('*')
       .eq('id', session_id)
-      .eq('phone', formattedPhone)
       .eq('verified', true)
-      .single();
+      .maybeSingle();
 
-    if (sessionError || !session) {
+    if (sessionError) {
+      console.error('Session fetch error:', sessionError);
+      return new Response(
+        JSON.stringify({ error: 'Failed to verify session' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!session) {
+      console.log(`No valid session found for ID: ${session_id}`);
       return new Response(
         JSON.stringify({ error: 'Invalid or expired session. Please verify your phone again.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    console.log(`Found session: ${session.id}, phone: ${session.phone}`);
 
     // Check if session expired (give 10 more minutes after verification for password reset)
     const sessionExpiry = new Date(session.expires_at);
@@ -80,19 +93,32 @@ serve(async (req) => {
       );
     }
 
-    // Find the user by phone in profiles
-    const { data: profile, error: profileError } = await supabase
+    // Find the user by phone in profiles - use the phone from the session
+    const sessionPhone = session.phone;
+    const { data: profiles, error: profileError } = await supabase
       .from('profiles')
       .select('user_id, phone')
-      .or(`phone.eq.${formattedPhone},phone.eq.0${formattedPhone.substring(2)},phone.eq.+${formattedPhone}`)
-      .single();
+      .or(`phone.eq.${sessionPhone},phone.eq.0${sessionPhone.substring(2)},phone.eq.+${sessionPhone},phone.ilike.%${sessionPhone.substring(2)}%`)
+      .limit(1);
 
-    if (profileError || !profile) {
+    if (profileError) {
+      console.error('Profile fetch error:', profileError);
+      return new Response(
+        JSON.stringify({ error: 'Failed to find user' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!profiles || profiles.length === 0) {
+      console.log(`No profile found for phone: ${sessionPhone}`);
       return new Response(
         JSON.stringify({ error: 'User not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const profile = profiles[0];
+    console.log(`Found profile with user_id: ${profile.user_id}`);
 
     // Update the user's password using admin API
     const { error: updateError } = await supabase.auth.admin.updateUserById(
