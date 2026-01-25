@@ -1,39 +1,30 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Box, Loader2, CheckCircle2, Phone, ArrowRight } from "lucide-react";
-import { getOrderData } from "@/lib/orderStore";
+import { Box, Loader2, CheckCircle2, Phone, KeyRound, ArrowLeft } from "lucide-react";
 
-type Step = 'phone' | 'otp' | 'details';
+type Step = 'phone' | 'otp' | 'password';
 
-export default function Register() {
+export default function ForgotPassword() {
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState("");
   const [otpCode, setOtpCode] = useState("");
-  const [isVerified, setIsVerified] = useState(false);
+  const [sessionId, setSessionId] = useState("");
   const [countdown, setCountdown] = useState(0);
-  const [formData, setFormData] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    address: "",
-    password: "",
-    confirmPassword: "",
-  });
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isVerified, setIsVerified] = useState(false);
   const navigate = useNavigate();
-  const location = useLocation();
-  const redirectToCheckout = location.state?.redirectToCheckout || getOrderData() !== null;
 
   // Countdown timer for resend
   useEffect(() => {
@@ -52,7 +43,7 @@ export default function Register() {
     setIsSendingOtp(true);
     try {
       const { data, error } = await supabase.functions.invoke("send-otp", {
-        body: { phone, purpose: 'registration' },
+        body: { phone, purpose: 'forgot_password' },
       });
 
       if (error) throw error;
@@ -60,7 +51,7 @@ export default function Register() {
 
       toast.success("OTP sent to your phone!");
       setStep('otp');
-      setCountdown(60); // 60 second cooldown for resend
+      setCountdown(60);
     } catch (error: any) {
       toast.error(error.message || "Failed to send OTP");
     } finally {
@@ -83,12 +74,12 @@ export default function Register() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
+      setSessionId(data.session_id);
       setIsVerified(true);
-      toast.success("Phone verified successfully!");
+      toast.success("Phone verified!");
       
-      // Short delay to show verified state
       setTimeout(() => {
-        setStep('details');
+        setStep('password');
       }, 1000);
     } catch (error: any) {
       toast.error(error.message || "Failed to verify OTP");
@@ -98,49 +89,36 @@ export default function Register() {
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (formData.password !== formData.confirmPassword) {
+
+    if (newPassword !== confirmPassword) {
       toast.error("Passwords do not match");
       return;
     }
 
-    if (formData.password.length < 6) {
+    if (newPassword.length < 6) {
       toast.error("Password must be at least 6 characters");
       return;
     }
 
     setIsLoading(true);
-
     try {
-      const phoneDigits = phone.replace(/[^0-9]/g, "");
-      const email = `${phoneDigits}@iobuilds.local`;
-
-      const { error } = await supabase.auth.signUp({
-        email,
-        password: formData.password,
-        options: {
-          emailRedirectTo: window.location.origin,
-          data: {
-            first_name: formData.firstName,
-            last_name: formData.lastName,
-            phone: phone,
-            address: formData.address,
-          },
+      const { data, error } = await supabase.functions.invoke("reset-password", {
+        body: { 
+          phone, 
+          new_password: newPassword,
+          session_id: sessionId,
         },
       });
 
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
-      toast.success("Account created! You can now sign in.");
-      navigate("/login", { state: { redirectToCheckout } });
+      toast.success("Password reset successfully! Please sign in.");
+      navigate("/login");
     } catch (error: any) {
-      toast.error(error.message || "Failed to create account");
+      toast.error(error.message || "Failed to reset password");
     } finally {
       setIsLoading(false);
     }
@@ -148,17 +126,17 @@ export default function Register() {
 
   return (
     <Layout showFooter={false}>
-      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 bg-secondary/30 py-12">
-        <Card className="w-full max-w-lg">
+      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 bg-secondary/30">
+        <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <div className="w-16 h-16 rounded-2xl bg-primary-gradient flex items-center justify-center mx-auto mb-4">
-              <Box className="w-8 h-8 text-primary-foreground" />
+              <KeyRound className="w-8 h-8 text-primary-foreground" />
             </div>
-            <CardTitle className="font-display text-2xl">Create Account</CardTitle>
+            <CardTitle className="font-display text-2xl">Reset Password</CardTitle>
             <CardDescription>
-              {step === 'phone' && "Enter your phone number to get started"}
+              {step === 'phone' && "Enter your phone number to reset your password"}
               {step === 'otp' && "Enter the verification code sent to your phone"}
-              {step === 'details' && "Complete your registration"}
+              {step === 'password' && "Create a new password for your account"}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -166,7 +144,7 @@ export default function Register() {
             {step === 'phone' && (
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="phone">Phone Number *</Label>
+                  <Label htmlFor="phone">Phone Number</Label>
                   <Input
                     id="phone"
                     type="tel"
@@ -176,7 +154,7 @@ export default function Register() {
                     required
                   />
                   <p className="text-xs text-muted-foreground">
-                    We'll send a verification code to this number
+                    Enter the phone number associated with your account
                   </p>
                 </div>
                 <Button
@@ -190,7 +168,7 @@ export default function Register() {
                   ) : (
                     <Phone className="w-4 h-4 mr-2" />
                   )}
-                  Get OTP
+                  Send OTP
                 </Button>
               </div>
             )}
@@ -276,9 +254,9 @@ export default function Register() {
               </div>
             )}
 
-            {/* Step 3: Registration Details */}
-            {step === 'details' && (
-              <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Step 3: New Password */}
+            {step === 'password' && (
+              <form onSubmit={handleResetPassword} className="space-y-4">
                 <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg border border-green-200 mb-4">
                   <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
                   <span className="text-sm text-green-700">
@@ -286,73 +264,27 @@ export default function Register() {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="firstName">First Name *</Label>
-                    <Input
-                      id="firstName"
-                      name="firstName"
-                      value={formData.firstName}
-                      onChange={handleChange}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="lastName">Last Name *</Label>
-                    <Input
-                      id="lastName"
-                      name="lastName"
-                      value={formData.lastName}
-                      onChange={handleChange}
-                      required
-                    />
-                  </div>
-                </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email (Optional)</Label>
+                  <Label htmlFor="newPassword">New Password</Label>
                   <Input
-                    id="email"
-                    name="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={handleChange}
+                    id="newPassword"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    placeholder="At least 6 characters"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="address">Delivery Address *</Label>
-                  <Textarea
-                    id="address"
-                    name="address"
-                    placeholder="Full address for delivery"
-                    value={formData.address}
-                    onChange={handleChange}
+                  <Label htmlFor="confirmPassword">Confirm Password</Label>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
                     required
                   />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Password *</Label>
-                    <Input
-                      id="password"
-                      name="password"
-                      type="password"
-                      value={formData.password}
-                      onChange={handleChange}
-                      required
-                      minLength={6}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="confirmPassword">Confirm *</Label>
-                    <Input
-                      id="confirmPassword"
-                      name="confirmPassword"
-                      type="password"
-                      value={formData.confirmPassword}
-                      onChange={handleChange}
-                      required
-                    />
-                  </div>
                 </div>
                 <Button
                   type="submit"
@@ -362,19 +294,22 @@ export default function Register() {
                   {isLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin mr-2" />
                   ) : (
-                    <ArrowRight className="w-4 h-4 mr-2" />
+                    <KeyRound className="w-4 h-4 mr-2" />
                   )}
-                  Create Account
+                  Reset Password
                 </Button>
               </form>
             )}
 
-            <p className="text-center text-sm text-muted-foreground mt-4">
-              Already have an account?{" "}
-              <Link to="/login" className="text-primary hover:underline font-medium">
-                Sign in
+            <div className="flex items-center justify-center mt-4">
+              <Link
+                to="/login"
+                className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to Login
               </Link>
-            </p>
+            </div>
           </CardContent>
         </Card>
       </div>
