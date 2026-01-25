@@ -43,16 +43,28 @@ serve(async (req) => {
     };
 
     const formattedPhone = formatPhone(phone);
+    console.log(`Verifying OTP for ${formattedPhone}`);
 
-    // Get OTP session
+    // Get OTP session using maybeSingle to avoid errors
     const { data: session, error: fetchError } = await supabase
       .from('otp_sessions')
       .select('*')
       .eq('phone', formattedPhone)
       .eq('verified', false)
-      .single();
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (fetchError || !session) {
+    if (fetchError) {
+      console.error('Error fetching OTP session:', fetchError);
+      return new Response(
+        JSON.stringify({ error: 'Failed to verify OTP' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!session) {
+      console.log(`No pending OTP found for ${formattedPhone}`);
       return new Response(
         JSON.stringify({ error: 'No pending OTP found. Please request a new code.' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -52,41 +52,36 @@ serve(async (req) => {
     };
 
     const formattedPhone = formatPhone(phone);
+    console.log(`Processing OTP request for ${formattedPhone}, purpose: ${purpose}`);
 
     // For forgot password, check if user exists
     if (purpose === 'forgot_password') {
-      const { data: profile } = await supabase
+      const { data: profiles } = await supabase
         .from('profiles')
-        .select('id')
-        .eq('phone', formattedPhone)
-        .single();
+        .select('id, phone')
+        .or(`phone.eq.${formattedPhone},phone.eq.0${formattedPhone.substring(2)},phone.eq.+${formattedPhone},phone.ilike.%${formattedPhone.substring(2)}%`)
+        .limit(1);
 
-      if (!profile) {
-        // Also check without country code
-        const { data: profile2 } = await supabase
-          .from('profiles')
-          .select('id')
-          .or(`phone.eq.${formattedPhone},phone.eq.0${formattedPhone.substring(2)},phone.eq.+${formattedPhone}`)
-          .single();
-
-        if (!profile2) {
-          return new Response(
-            JSON.stringify({ error: 'No account found with this phone number' }),
-            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
+      if (!profiles || profiles.length === 0) {
+        console.log(`No account found for phone: ${formattedPhone}`);
+        return new Response(
+          JSON.stringify({ error: 'No account found with this phone number' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
+      console.log(`Found profile for forgot password: ${profiles[0].id}`);
     }
 
     // For registration, check if phone is already registered
     if (purpose === 'registration') {
-      const { data: existingProfile } = await supabase
+      const { data: existingProfiles } = await supabase
         .from('profiles')
-        .select('id')
-        .or(`phone.eq.${formattedPhone},phone.eq.0${formattedPhone.substring(2)},phone.eq.+${formattedPhone}`)
-        .single();
+        .select('id, phone')
+        .or(`phone.eq.${formattedPhone},phone.eq.0${formattedPhone.substring(2)},phone.eq.+${formattedPhone},phone.ilike.%${formattedPhone.substring(2)}%`)
+        .limit(1);
 
-      if (existingProfile) {
+      if (existingProfiles && existingProfiles.length > 0) {
+        console.log(`Phone already registered: ${formattedPhone}`);
         return new Response(
           JSON.stringify({ error: 'This phone number is already registered' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -148,7 +143,6 @@ serve(async (req) => {
 
     if (!isSuccess) {
       console.error('SMS sending failed:', result);
-      // Still return success to avoid revealing if number exists (for security)
     }
 
     console.log(`OTP ${otpCode} sent to ${formattedPhone} for ${purpose}`);
