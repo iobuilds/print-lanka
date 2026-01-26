@@ -14,12 +14,12 @@ export default function RefundPolicy() {
             <CardContent className="prose prose-neutral dark:prose-invert max-w-none">
               <h2 className="text-xl font-semibold mt-6 mb-3">1. Overview</h2>
               <p className="text-muted-foreground mb-4">
-                At IO Builds LLC, we strive to deliver high-quality 3D printed products. This policy outlines the circumstances under which refunds may be provided.
+                At IO Builds LLC, all payments are final once confirmed. We do not issue cash or card refunds. Where applicable, approved refunds are provided in the form of store credit or a coupon code equal to the approved refund amount.
               </p>
 
               <h2 className="text-xl font-semibold mt-6 mb-3">2. Eligible for Refund</h2>
               <p className="text-muted-foreground mb-4">
-                You may be eligible for a full or partial refund if:
+                You may be eligible for store credit (coupon code) equal to a full or partial refund amount if:
               </p>
               <ul className="list-disc list-inside text-muted-foreground space-y-2 mb-4">
                 <li>The printed item has manufacturing defects (layer separation, warping due to our error)</li>
@@ -48,17 +48,17 @@ export default function RefundPolicy() {
                 <li>Contact us within 7 days of receiving your order</li>
                 <li>Provide your order ID and photos/videos of the issue</li>
                 <li>Our team will review your claim within 3 business days</li>
-                <li>If approved, refund will be processed to your original payment method within 7-10 business days</li>
+                <li>If approved, a coupon code equal to the approved refund amount will be issued within 3–5 business days</li>
               </ol>
 
               <h2 className="text-xl font-semibold mt-6 mb-3">5. Reprint Option</h2>
               <p className="text-muted-foreground mb-4">
-                In many cases, we may offer to reprint the item at no additional cost instead of providing a refund. This is often faster and ensures you receive your desired product.
+                In many cases, we may offer to reprint the item at no additional cost instead of issuing store credit. Reprints are prioritized where feasible to ensure you receive the correct product as quickly as possible.
               </p>
 
               <h2 className="text-xl font-semibold mt-6 mb-3">6. Shipping Costs</h2>
               <p className="text-muted-foreground mb-4">
-                For defective items, we will cover return shipping costs. For approved refunds, original shipping charges may be non-refundable unless the error was on our part.
+                For defective items, we will cover return shipping costs where applicable. Shipping charges are not refundable as cash and are not included in coupon-based refunds unless the error was entirely on our part.
               </p>
 
               <h2 className="text-xl font-semibold mt-6 mb-3">7. Disputes</h2>
