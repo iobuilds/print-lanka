@@ -123,12 +123,32 @@ export default function Dashboard() {
   const [isUploadingSlip, setIsUploadingSlip] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [showBankDetails, setShowBankDetails] = useState(false);
+  const [adminPhone, setAdminPhone] = useState("0717367497");
 
   useEffect(() => {
     if (!authLoading && !user) {
       navigate("/login");
     }
   }, [user, authLoading, navigate]);
+
+  // Fetch admin phone for notifications
+  useEffect(() => {
+    const fetchAdminPhone = async () => {
+      const { data } = await supabase
+        .from("system_settings")
+        .select("value")
+        .eq("key", "contact_config")
+        .single();
+
+      if (data?.value && typeof data.value === 'object' && !Array.isArray(data.value)) {
+        const config = data.value as { admin_phone?: string };
+        if (config.admin_phone) {
+          setAdminPhone(config.admin_phone);
+        }
+      }
+    };
+    fetchAdminPhone();
+  }, []);
 
   useEffect(() => {
     if (profile) {
@@ -376,6 +396,20 @@ export default function Dashboard() {
         .eq("id", uploadingOrderId);
 
       if (statusError) throw statusError;
+
+      // Notify admin about payment slip
+      try {
+        await supabase.functions.invoke("send-sms", {
+          body: {
+            phone: adminPhone,
+            message: `Payment slip uploaded for order #${uploadingOrderId.slice(0, 8)} by ${profile?.first_name || 'Customer'}. Please verify.`,
+            order_id: uploadingOrderId,
+            user_id: user.id,
+          },
+        });
+      } catch (smsError) {
+        console.error("Failed to send admin notification:", smsError);
+      }
 
       // Close dialog and refresh
       setUploadingOrderId(null);

@@ -1,7 +1,11 @@
 import { Link } from "react-router-dom";
-import { Box, Mail, MapPin } from "lucide-react";
+import { Mail, MapPin, Phone } from "lucide-react";
+import { useContactInfo } from "@/hooks/useContactInfo";
+import logo from "@/assets/logo.png";
 
 export function Footer() {
+  const { contactInfo } = useContactInfo();
+
   return (
     <footer className="bg-dark-gradient text-white">
       <div className="container mx-auto px-4 py-12">
@@ -9,12 +13,7 @@ export function Footer() {
           {/* Brand */}
           <div className="space-y-4">
             <Link to="/" className="flex items-center gap-2">
-              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-                <Box className="w-6 h-6 text-primary-foreground" />
-              </div>
-              <span className="font-display font-bold text-xl">
-                IO Builds LLC
-              </span>
+              <img src={logo} alt="IO Builds Logo" className="h-10 w-auto" />
             </Link>
             <p className="text-gray-400 text-sm">
               Professional 3D printing services. From prototype to production,
@@ -48,16 +47,29 @@ export function Footer() {
           <div>
             <h4 className="font-display font-semibold mb-4">Contact Us</h4>
             <ul className="space-y-3 text-gray-400">
+              {contactInfo.admin_phone && (
+                <li className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-primary" />
+                  <a 
+                    href={`tel:${contactInfo.admin_phone}`} 
+                    className="hover:text-white transition-colors"
+                  >
+                    {contactInfo.admin_phone}
+                  </a>
+                </li>
+              )}
               <li className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-primary" />
                 <a href="mailto:official.iobuilds@gmail.com" className="hover:text-white transition-colors">
                   official.iobuilds@gmail.com
                 </a>
               </li>
-              <li className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-primary mt-1" />
-                <span>1001 S. Main St., STE 500, Kalispell, MT 59901, United States</span>
-              </li>
+              {contactInfo.address && (
+                <li className="flex items-start gap-2">
+                  <MapPin className="w-4 h-4 text-primary mt-1" />
+                  <span>{contactInfo.address}</span>
+                </li>
+              )}
             </ul>
           </div>
         </div>

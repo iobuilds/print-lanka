@@ -9,8 +9,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Box, Loader2, CheckCircle2, Phone, ArrowRight } from "lucide-react";
+import { Loader2, CheckCircle2, Phone, ArrowRight } from "lucide-react";
 import { getOrderData } from "@/lib/orderStore";
+import logo from "@/assets/logo.png";
 
 type Step = 'phone' | 'otp' | 'details';
 
@@ -35,6 +36,14 @@ export default function Register() {
   const location = useLocation();
   const redirectToCheckout = location.state?.redirectToCheckout || getOrderData() !== null;
 
+  // Format phone for display (local format)
+  const formatPhoneDisplay = (value: string) => {
+    // Remove all non-digits
+    const digits = value.replace(/[^0-9]/g, "");
+    // Limit to 10 digits
+    return digits.slice(0, 10);
+  };
+
   // Countdown timer for resend
   useEffect(() => {
     if (countdown > 0) {
@@ -44,8 +53,9 @@ export default function Register() {
   }, [countdown]);
 
   const handleSendOtp = async () => {
-    if (!phone || phone.replace(/[^0-9]/g, "").length < 9) {
-      toast.error("Please enter a valid phone number");
+    const digits = phone.replace(/[^0-9]/g, "");
+    if (!phone || digits.length < 9) {
+      toast.error("Please enter a valid phone number (e.g., 0771234567)");
       return;
     }
 
@@ -151,8 +161,8 @@ export default function Register() {
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 bg-secondary/30 py-12">
         <Card className="w-full max-w-lg">
           <CardHeader className="text-center">
-            <div className="w-16 h-16 rounded-2xl bg-primary-gradient flex items-center justify-center mx-auto mb-4">
-              <Box className="w-8 h-8 text-primary-foreground" />
+            <div className="flex justify-center mb-4">
+              <img src={logo} alt="IO Builds Logo" className="h-16 w-auto" />
             </div>
             <CardTitle className="font-display text-2xl">Create Account</CardTitle>
             <CardDescription>
@@ -170,13 +180,13 @@ export default function Register() {
                   <Input
                     id="phone"
                     type="tel"
-                    placeholder="+94 77 123 4567"
+                    placeholder="0771234567"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => setPhone(formatPhoneDisplay(e.target.value))}
                     required
                   />
                   <p className="text-xs text-muted-foreground">
-                    We'll send a verification code to this number
+                    Enter your phone number (e.g., 0771234567). We'll send a verification code.
                   </p>
                 </div>
                 <Button
