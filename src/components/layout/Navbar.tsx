@@ -12,8 +12,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Box, User, LogOut, LayoutDashboard, Settings, Menu, X, Tag } from "lucide-react";
+import { User, LogOut, LayoutDashboard, Settings, Menu, X } from "lucide-react";
 import { useState, useEffect } from "react";
+import logo from "@/assets/logo.png";
 
 export function Navbar() {
   const { user, profile, isAdminOrModerator, signOut } = useAuth();
@@ -70,12 +71,7 @@ export function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-primary-gradient flex items-center justify-center">
-              <Box className="w-6 h-6 text-primary-foreground" />
-            </div>
-            <span className="font-display font-bold text-xl text-foreground">
-              IO <span className="text-primary">Builds</span>
-            </span>
+            <img src={logo} alt="IO Builds Logo" className="h-10 w-auto" />
           </Link>
 
           {/* Desktop Navigation */}

@@ -7,13 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { 
   Loader2, ChevronDown, ChevronUp, DollarSign, Send, FileImage, 
   Search, Download, Eye, RefreshCw, Bell, MapPin, Phone, Mail,
-  Package, Calendar, FileText, Calculator, Percent, Tag, Truck, Edit2
+  Package, Calendar, FileText, Calculator, Percent, Tag, Truck, Edit2,
+  Trash2, AlertTriangle
 } from "lucide-react";
 import { formatPrice, ORDER_STATUSES } from "@/lib/constants";
 import { toast } from "sonner";
@@ -110,6 +111,10 @@ export default function AdminOrders() {
   const [trackingDialog, setTrackingDialog] = useState<{ orderId: string; order: Order } | null>(null);
   const [trackingNumber, setTrackingNumber] = useState<string>("");
   const [isSavingTracking, setIsSavingTracking] = useState(false);
+  
+  // Delete order dialog state
+  const [deleteDialog, setDeleteDialog] = useState<Order | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     fetchOrders();
@@ -424,6 +429,41 @@ export default function AdminOrders() {
       fetchOrders();
     } else {
       toast.error("Failed to update tracking number");
+    }
+  };
+
+  const handleDeleteOrder = async () => {
+    if (!deleteDialog) return;
+
+    setIsDeleting(true);
+    try {
+      // Delete order items first
+      await supabase
+        .from("order_items")
+        .delete()
+        .eq("order_id", deleteDialog.id);
+
+      // Delete payment slips
+      await supabase
+        .from("payment_slips")
+        .delete()
+        .eq("order_id", deleteDialog.id);
+
+      // Delete the order
+      const { error } = await supabase
+        .from("orders")
+        .delete()
+        .eq("id", deleteDialog.id);
+
+      if (error) throw error;
+
+      toast.success("Order deleted successfully");
+      setDeleteDialog(null);
+      fetchOrders();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete order");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -886,13 +926,21 @@ export default function AdminOrders() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
                           <Button
                             size="sm"
                             variant="ghost"
                             onClick={() => setDetailsOrder(order)}
                           >
                             <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => setDeleteDialog(order)}
+                          >
+                            <Trash2 className="w-4 h-4" />
                           </Button>
                           <Select
                             value={order.status}
@@ -1449,7 +1497,40 @@ export default function AdminOrders() {
               ) : (
                 <Truck className="w-4 h-4 mr-2" />
               )}
-              Mark as Shipped
+            Mark as Shipped
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Order Confirmation Dialog */}
+      <Dialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              Delete Order
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete order #{deleteDialog?.id.slice(0, 8)}? 
+              This will remove all order items and payment slips. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialog(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteOrder}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <Trash2 className="w-4 h-4 mr-2" />
+              )}
+              Delete Order
             </Button>
           </DialogFooter>
         </DialogContent>

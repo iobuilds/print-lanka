@@ -2,8 +2,11 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, CheckCircle, XCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Loader2, CheckCircle, XCircle, Trash2, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
 
 interface User {
   id: string;
@@ -20,6 +23,8 @@ interface User {
 export default function AdminUsers() {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [deleteDialog, setDeleteDialog] = useState<User | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -46,11 +51,40 @@ export default function AdminUsers() {
     setIsLoading(false);
   };
 
+  const handleDeleteUser = async () => {
+    if (!deleteDialog) return;
+
+    setIsDeleting(true);
+    try {
+      // Delete user's roles first
+      await supabase
+        .from("user_roles")
+        .delete()
+        .eq("user_id", deleteDialog.user_id);
+
+      // Delete user's profile
+      const { error } = await supabase
+        .from("profiles")
+        .delete()
+        .eq("user_id", deleteDialog.user_id);
+
+      if (error) throw error;
+
+      toast.success("User deleted successfully");
+      setDeleteDialog(null);
+      fetchUsers();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete user");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-3xl font-bold">Users</h1>
-        <p className="text-muted-foreground">View registered users</p>
+        <p className="text-muted-foreground">View and manage registered users</p>
       </div>
 
       <Card>
@@ -75,6 +109,7 @@ export default function AdminUsers() {
                   <TableHead>Verified</TableHead>
                   <TableHead>Roles</TableHead>
                   <TableHead>Joined</TableHead>
+                  <TableHead className="w-[80px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -109,6 +144,18 @@ export default function AdminUsers() {
                     <TableCell className="text-sm text-muted-foreground">
                       {new Date(user.created_at).toLocaleDateString()}
                     </TableCell>
+                    <TableCell>
+                      {!user.roles.includes("admin") && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => setDeleteDialog(user)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -116,6 +163,39 @@ export default function AdminUsers() {
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              Delete User
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {deleteDialog?.first_name} {deleteDialog?.last_name}?
+              This will remove their profile and roles. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialog(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteUser}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <Trash2 className="w-4 h-4 mr-2" />
+              )}
+              Delete User
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

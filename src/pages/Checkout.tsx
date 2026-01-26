@@ -69,6 +69,7 @@ export default function Checkout() {
   const [couponCode, setCouponCode] = useState("");
   const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
   const [showBankDetails, setShowBankDetails] = useState(false);
+  const [adminPhone, setAdminPhone] = useState("0717367497");
 
   // Get order data from memory store
   const orderData = getOrderData();
@@ -137,6 +138,26 @@ export default function Checkout() {
 
     fetchUserCoupons();
   }, [user, preSelectedCoupon]);
+
+  // Fetch admin phone for notifications
+  useEffect(() => {
+    const fetchAdminPhone = async () => {
+      const { data } = await supabase
+        .from("system_settings")
+        .select("value")
+        .eq("key", "contact_config")
+        .single();
+
+      if (data?.value && typeof data.value === 'object' && !Array.isArray(data.value)) {
+        const config = data.value as { admin_phone?: string };
+        if (config.admin_phone) {
+          setAdminPhone(config.admin_phone);
+        }
+      }
+    };
+
+    fetchAdminPhone();
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -232,7 +253,7 @@ export default function Checkout() {
       try {
         await supabase.functions.invoke("send-sms", {
           body: {
-            phone: "0717367497", // Admin phone number
+            phone: adminPhone,
             message: `New order #${order.id.slice(0, 8)} received from ${profile?.first_name || 'Customer'}! ${models.length} item(s). Please review and price.`,
             order_id: order.id,
             user_id: user.id,

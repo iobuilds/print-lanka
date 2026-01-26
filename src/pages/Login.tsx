@@ -7,8 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Box, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { getOrderData } from "@/lib/orderStore";
+import logo from "@/assets/logo.png";
 
 export default function Login() {
   const [phone, setPhone] = useState("");
@@ -18,13 +19,22 @@ export default function Login() {
   const location = useLocation();
   const redirectToCheckout = location.state?.redirectToCheckout || getOrderData() !== null;
 
+  // Format phone for display (local format)
+  const formatPhoneDisplay = (value: string) => {
+    // Remove all non-digits
+    const digits = value.replace(/[^0-9]/g, "");
+    // Limit to 10 digits
+    return digits.slice(0, 10);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
       // Format phone as email for Supabase auth
-      const email = `${phone.replace(/[^0-9]/g, "")}@iobuilds.local`;
+      const phoneDigits = phone.replace(/[^0-9]/g, "");
+      const email = `${phoneDigits}@iobuilds.local`;
       
       const { error } = await supabase.auth.signInWithPassword({
         email,
@@ -47,8 +57,8 @@ export default function Login() {
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 bg-secondary/30">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
-            <div className="w-16 h-16 rounded-2xl bg-primary-gradient flex items-center justify-center mx-auto mb-4">
-              <Box className="w-8 h-8 text-primary-foreground" />
+            <div className="flex justify-center mb-4">
+              <img src={logo} alt="IO Builds Logo" className="h-16 w-auto" />
             </div>
             <CardTitle className="font-display text-2xl">Welcome Back</CardTitle>
             <CardDescription>Sign in to your IO Builds account</CardDescription>
@@ -60,11 +70,14 @@ export default function Login() {
                 <Input
                   id="phone"
                   type="tel"
-                  placeholder="+94 77 123 4567"
+                  placeholder="0771234567"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => setPhone(formatPhoneDisplay(e.target.value))}
                   required
                 />
+                <p className="text-xs text-muted-foreground">
+                  Enter your phone number (e.g., 0771234567)
+                </p>
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">

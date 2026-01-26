@@ -10,8 +10,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Settings, MessageSquare, Truck, Save, Loader2, TestTube, 
   DollarSign, Palette, Package, Trash2, Database, Download, 
-  Upload, AlertTriangle, CheckCircle, HardDrive, FileBox
+  Upload, AlertTriangle, CheckCircle, HardDrive, FileBox, Phone, MapPin
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -54,6 +55,12 @@ interface PricingConfig {
   rush_order_multiplier: number;
 }
 
+interface ContactConfig {
+  admin_phone: string;
+  address: string;
+  whatsapp_number: string;
+}
+
 const defaultSmsConfig: SMSConfig = {
   provider: "dialog",
   api_key: "",
@@ -61,6 +68,12 @@ const defaultSmsConfig: SMSConfig = {
   sender_id: "",
   api_url: "",
   enabled: false,
+};
+
+const defaultContactConfig: ContactConfig = {
+  admin_phone: "0717367497",
+  address: "1001 S. Main St., STE 500, Kalispell, MT 59901, United States",
+  whatsapp_number: "",
 };
 
 const defaultDeliveryConfig: DeliveryConfig = {
@@ -92,10 +105,12 @@ export default function AdminSettings() {
   const [smsConfig, setSmsConfig] = useState<SMSConfig>(defaultSmsConfig);
   const [deliveryConfig, setDeliveryConfig] = useState<DeliveryConfig>(defaultDeliveryConfig);
   const [pricingConfig, setPricingConfig] = useState<PricingConfig>(defaultPricingConfig);
+  const [contactConfig, setContactConfig] = useState<ContactConfig>(defaultContactConfig);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSms, setIsSavingSms] = useState(false);
   const [isSavingDelivery, setIsSavingDelivery] = useState(false);
   const [isSavingPricing, setIsSavingPricing] = useState(false);
+  const [isSavingContact, setIsSavingContact] = useState(false);
   const [testPhone, setTestPhone] = useState("");
   const [isTesting, setIsTesting] = useState(false);
   
@@ -118,10 +133,11 @@ export default function AdminSettings() {
     setIsLoading(true);
     
     // Fetch all configs in parallel
-    const [smsResult, deliveryResult, pricingResult] = await Promise.all([
+    const [smsResult, deliveryResult, pricingResult, contactResult] = await Promise.all([
       supabase.from("system_settings").select("value").eq("key", "sms_config").single(),
       supabase.from("system_settings").select("value").eq("key", "delivery_config").single(),
       supabase.from("system_settings").select("value").eq("key", "pricing_config").single(),
+      supabase.from("system_settings").select("value").eq("key", "contact_config").single(),
     ]);
 
     if (smsResult.data?.value && typeof smsResult.data.value === 'object' && !Array.isArray(smsResult.data.value)) {
@@ -134,6 +150,10 @@ export default function AdminSettings() {
 
     if (pricingResult.data?.value && typeof pricingResult.data.value === 'object' && !Array.isArray(pricingResult.data.value)) {
       setPricingConfig(pricingResult.data.value as unknown as PricingConfig);
+    }
+
+    if (contactResult.data?.value && typeof contactResult.data.value === 'object' && !Array.isArray(contactResult.data.value)) {
+      setContactConfig({ ...defaultContactConfig, ...(contactResult.data.value as unknown as ContactConfig) });
     }
 
     setIsLoading(false);
@@ -202,6 +222,28 @@ export default function AdminSettings() {
       toast.error(error.message || "Failed to save pricing settings");
     } finally {
       setIsSavingPricing(false);
+    }
+  };
+
+  const handleSaveContactConfig = async () => {
+    setIsSavingContact(true);
+    try {
+      const { error } = await supabase
+        .from("system_settings")
+        .upsert({
+          key: "contact_config",
+          value: contactConfig as any,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: "key"
+        });
+
+      if (error) throw error;
+      toast.success("Contact settings saved successfully");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save contact settings");
+    } finally {
+      setIsSavingContact(false);
     }
   };
 
@@ -452,6 +494,10 @@ export default function AdminSettings() {
           <TabsTrigger value="maintenance" className="gap-2">
             <HardDrive className="w-4 h-4" />
             Maintenance
+          </TabsTrigger>
+          <TabsTrigger value="contact" className="gap-2">
+            <Phone className="w-4 h-4" />
+            Contact
           </TabsTrigger>
         </TabsList>
 
@@ -930,6 +976,81 @@ export default function AdminSettings() {
                     />
                   </div>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Contact Settings */}
+        <TabsContent value="contact" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Phone className="w-5 h-5" />
+                Contact Information
+              </CardTitle>
+              <CardDescription>
+                Configure contact details shown in footer and used for notifications
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="admin-phone">Admin Phone Number</Label>
+                  <Input
+                    id="admin-phone"
+                    placeholder="0771234567"
+                    value={contactConfig.admin_phone}
+                    onChange={(e) => 
+                      setContactConfig({ ...contactConfig, admin_phone: e.target.value })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This number receives new order notifications and is shown in the footer
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="whatsapp">WhatsApp Number (Optional)</Label>
+                  <Input
+                    id="whatsapp"
+                    placeholder="94771234567"
+                    value={contactConfig.whatsapp_number}
+                    onChange={(e) => 
+                      setContactConfig({ ...contactConfig, whatsapp_number: e.target.value })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Include country code without +
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="address">Business Address</Label>
+                <Textarea
+                  id="address"
+                  placeholder="Enter full business address..."
+                  value={contactConfig.address}
+                  onChange={(e) => 
+                    setContactConfig({ ...contactConfig, address: e.target.value })
+                  }
+                  rows={3}
+                />
+                <p className="text-xs text-muted-foreground">
+                  This address is displayed in the website footer
+                </p>
+              </div>
+
+              <div className="flex justify-end">
+                <Button onClick={handleSaveContactConfig} disabled={isSavingContact}>
+                  {isSavingContact ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-2" />
+                  )}
+                  Save Contact Settings
+                </Button>
               </div>
             </CardContent>
           </Card>
