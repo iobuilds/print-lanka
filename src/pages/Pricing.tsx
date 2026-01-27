@@ -33,6 +33,12 @@ interface DeliveryConfig {
   island_max: number;
 }
 
+interface PricingImages {
+  draft_image: string;
+  normal_image: string;
+  high_image: string;
+}
+
 const defaultPricingConfig: PricingConfig = {
   quality_pricing: { draft: 15, normal: 20, high: 30 },
   material_surcharge: { pla: 0, petg: 5, abs: 8 },
@@ -47,9 +53,16 @@ const defaultDeliveryConfig: DeliveryConfig = {
   island_max: 600,
 };
 
+const defaultPricingImages: PricingImages = {
+  draft_image: "",
+  normal_image: "",
+  high_image: "",
+};
+
 export default function Pricing() {
   const [pricingConfig, setPricingConfig] = useState<PricingConfig>(defaultPricingConfig);
   const [deliveryConfig, setDeliveryConfig] = useState<DeliveryConfig>(defaultDeliveryConfig);
+  const [pricingImages, setPricingImages] = useState<PricingImages>(defaultPricingImages);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -58,9 +71,10 @@ export default function Pricing() {
 
   const fetchPricingConfig = async () => {
     try {
-      const [pricingResult, deliveryResult] = await Promise.all([
+      const [pricingResult, deliveryResult, imagesResult] = await Promise.all([
         supabase.from("system_settings").select("value").eq("key", "pricing_config").single(),
         supabase.from("system_settings").select("value").eq("key", "delivery_config").single(),
+        supabase.from("system_settings").select("value").eq("key", "pricing_images").single(),
       ]);
 
       if (pricingResult.data?.value && typeof pricingResult.data.value === 'object') {
@@ -69,6 +83,10 @@ export default function Pricing() {
 
       if (deliveryResult.data?.value && typeof deliveryResult.data.value === 'object') {
         setDeliveryConfig(deliveryResult.data.value as unknown as DeliveryConfig);
+      }
+
+      if (imagesResult.data?.value && typeof imagesResult.data.value === 'object') {
+        setPricingImages(imagesResult.data.value as unknown as PricingImages);
       }
     } catch (error) {
       console.error("Error fetching pricing config:", error);
@@ -85,6 +103,7 @@ export default function Pricing() {
       pricePerGram: pricingConfig.quality_pricing.draft,
       icon: Zap,
       color: "from-amber-500 to-orange-600",
+      customImage: pricingImages.draft_image,
     },
     {
       quality: "Normal",
@@ -94,6 +113,7 @@ export default function Pricing() {
       icon: Layers,
       popular: true,
       color: "from-primary to-teal-600",
+      customImage: pricingImages.normal_image,
     },
     {
       quality: "High",
@@ -102,6 +122,7 @@ export default function Pricing() {
       pricePerGram: pricingConfig.quality_pricing.high,
       icon: Box,
       color: "from-blue-500 to-indigo-600",
+      customImage: pricingImages.high_image,
     },
   ];
 
@@ -189,9 +210,19 @@ export default function Pricing() {
                     <Badge className="bg-primary text-primary-foreground">Most Popular</Badge>
                   </div>
                 )}
-                <div className={`h-32 bg-gradient-to-br ${tier.color} flex items-center justify-center`}>
-                  <tier.icon className="w-16 h-16 text-white/90" />
-                </div>
+                {tier.customImage ? (
+                  <div className="h-32 flex items-center justify-center overflow-hidden">
+                    <img 
+                      src={tier.customImage} 
+                      alt={`${tier.quality} quality`} 
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className={`h-32 bg-gradient-to-br ${tier.color} flex items-center justify-center`}>
+                    <tier.icon className="w-16 h-16 text-white/90" />
+                  </div>
+                )}
                 <CardHeader>
                   <CardTitle className="font-display text-2xl">{tier.quality} Quality</CardTitle>
                   <p className="text-muted-foreground">{tier.description}</p>
