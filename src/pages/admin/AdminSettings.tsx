@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Settings, MessageSquare, Truck, Save, Loader2, TestTube, 
   DollarSign, Palette, Package, Trash2, Database, Download, 
-  Upload, AlertTriangle, CheckCircle, HardDrive, FileBox, Phone, MapPin
+  Upload, AlertTriangle, CheckCircle, HardDrive, FileBox, Phone, MapPin, Image
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -61,6 +61,12 @@ interface ContactConfig {
   whatsapp_number: string;
 }
 
+interface PricingImages {
+  draft_image: string;
+  normal_image: string;
+  high_image: string;
+}
+
 const defaultSmsConfig: SMSConfig = {
   provider: "dialog",
   api_key: "",
@@ -101,18 +107,32 @@ const defaultPricingConfig: PricingConfig = {
   rush_order_multiplier: 1.5,
 };
 
+const defaultPricingImages: PricingImages = {
+  draft_image: "",
+  normal_image: "",
+  high_image: "",
+};
+
 export default function AdminSettings() {
   const [smsConfig, setSmsConfig] = useState<SMSConfig>(defaultSmsConfig);
   const [deliveryConfig, setDeliveryConfig] = useState<DeliveryConfig>(defaultDeliveryConfig);
   const [pricingConfig, setPricingConfig] = useState<PricingConfig>(defaultPricingConfig);
   const [contactConfig, setContactConfig] = useState<ContactConfig>(defaultContactConfig);
+  const [pricingImages, setPricingImages] = useState<PricingImages>(defaultPricingImages);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSms, setIsSavingSms] = useState(false);
   const [isSavingDelivery, setIsSavingDelivery] = useState(false);
   const [isSavingPricing, setIsSavingPricing] = useState(false);
   const [isSavingContact, setIsSavingContact] = useState(false);
+  const [isSavingImages, setIsSavingImages] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState<string | null>(null);
   const [testPhone, setTestPhone] = useState("");
   const [isTesting, setIsTesting] = useState(false);
+  
+  // File input refs
+  const draftImageRef = useRef<HTMLInputElement>(null);
+  const normalImageRef = useRef<HTMLInputElement>(null);
+  const highImageRef = useRef<HTMLInputElement>(null);
   
   // Maintenance state
   const [isClearingFiles, setIsClearingFiles] = useState(false);
@@ -133,11 +153,12 @@ export default function AdminSettings() {
     setIsLoading(true);
     
     // Fetch all configs in parallel
-    const [smsResult, deliveryResult, pricingResult, contactResult] = await Promise.all([
+    const [smsResult, deliveryResult, pricingResult, contactResult, imagesResult] = await Promise.all([
       supabase.from("system_settings").select("value").eq("key", "sms_config").single(),
       supabase.from("system_settings").select("value").eq("key", "delivery_config").single(),
       supabase.from("system_settings").select("value").eq("key", "pricing_config").single(),
       supabase.from("system_settings").select("value").eq("key", "contact_config").single(),
+      supabase.from("system_settings").select("value").eq("key", "pricing_images").single(),
     ]);
 
     if (smsResult.data?.value && typeof smsResult.data.value === 'object' && !Array.isArray(smsResult.data.value)) {
@@ -156,7 +177,61 @@ export default function AdminSettings() {
       setContactConfig({ ...defaultContactConfig, ...(contactResult.data.value as unknown as ContactConfig) });
     }
 
+    if (imagesResult.data?.value && typeof imagesResult.data.value === 'object' && !Array.isArray(imagesResult.data.value)) {
+      setPricingImages({ ...defaultPricingImages, ...(imagesResult.data.value as unknown as PricingImages) });
+    }
+
     setIsLoading(false);
+  };
+
+  // Upload image to storage
+  const handleImageUpload = async (file: File, imageType: 'draft_image' | 'normal_image' | 'high_image') => {
+    setUploadingImage(imageType);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `pricing-${imageType}-${Date.now()}.${fileExt}`;
+      const filePath = `pricing/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('site-assets')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('site-assets')
+        .getPublicUrl(filePath);
+
+      setPricingImages(prev => ({ ...prev, [imageType]: publicUrl }));
+      toast.success("Image uploaded successfully");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to upload image");
+    } finally {
+      setUploadingImage(null);
+    }
+  };
+
+  // Save pricing images config
+  const handleSavePricingImages = async () => {
+    setIsSavingImages(true);
+    try {
+      const { error } = await supabase
+        .from("system_settings")
+        .upsert({
+          key: "pricing_images",
+          value: pricingImages as any,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: "key"
+        });
+
+      if (error) throw error;
+      toast.success("Pricing images saved successfully");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save pricing images");
+    } finally {
+      setIsSavingImages(false);
+    }
   };
 
   const handleSaveSmsConfig = async () => {
@@ -498,6 +573,10 @@ export default function AdminSettings() {
           <TabsTrigger value="contact" className="gap-2">
             <Phone className="w-4 h-4" />
             Contact
+          </TabsTrigger>
+          <TabsTrigger value="images" className="gap-2">
+            <Image className="w-4 h-4" />
+            Images
           </TabsTrigger>
         </TabsList>
 
@@ -1055,6 +1134,140 @@ export default function AdminSettings() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Images Settings */}
+        <TabsContent value="images" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Image className="w-5 h-5" />
+                Pricing Guide Images
+              </CardTitle>
+              <CardDescription>
+                Upload custom images to display on the pricing guide page for each quality tier
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-6 md:grid-cols-3">
+                {/* Draft Quality Image */}
+                <div className="space-y-3">
+                  <Label>Draft Quality Image</Label>
+                  <div 
+                    className="border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center min-h-[150px] cursor-pointer hover:border-primary/50 transition-colors"
+                    onClick={() => draftImageRef.current?.click()}
+                  >
+                    {uploadingImage === 'draft_image' ? (
+                      <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                    ) : pricingImages.draft_image ? (
+                      <img 
+                        src={pricingImages.draft_image} 
+                        alt="Draft quality" 
+                        className="w-full h-32 object-cover rounded"
+                      />
+                    ) : (
+                      <>
+                        <Upload className="w-8 h-8 text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground">Click to upload</p>
+                      </>
+                    )}
+                  </div>
+                  {pricingImages.draft_image && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full"
+                      onClick={() => setPricingImages(prev => ({ ...prev, draft_image: "" }))}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Remove
+                    </Button>
+                  )}
+                </div>
+
+                {/* Normal Quality Image */}
+                <div className="space-y-3">
+                  <Label>Normal Quality Image</Label>
+                  <div 
+                    className="border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center min-h-[150px] cursor-pointer hover:border-primary/50 transition-colors"
+                    onClick={() => normalImageRef.current?.click()}
+                  >
+                    {uploadingImage === 'normal_image' ? (
+                      <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                    ) : pricingImages.normal_image ? (
+                      <img 
+                        src={pricingImages.normal_image} 
+                        alt="Normal quality" 
+                        className="w-full h-32 object-cover rounded"
+                      />
+                    ) : (
+                      <>
+                        <Upload className="w-8 h-8 text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground">Click to upload</p>
+                      </>
+                    )}
+                  </div>
+                  {pricingImages.normal_image && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full"
+                      onClick={() => setPricingImages(prev => ({ ...prev, normal_image: "" }))}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Remove
+                    </Button>
+                  )}
+                </div>
+
+                {/* High Quality Image */}
+                <div className="space-y-3">
+                  <Label>High Quality Image</Label>
+                  <div 
+                    className="border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center min-h-[150px] cursor-pointer hover:border-primary/50 transition-colors"
+                    onClick={() => highImageRef.current?.click()}
+                  >
+                    {uploadingImage === 'high_image' ? (
+                      <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                    ) : pricingImages.high_image ? (
+                      <img 
+                        src={pricingImages.high_image} 
+                        alt="High quality" 
+                        className="w-full h-32 object-cover rounded"
+                      />
+                    ) : (
+                      <>
+                        <Upload className="w-8 h-8 text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground">Click to upload</p>
+                      </>
+                    )}
+                  </div>
+                  {pricingImages.high_image && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full"
+                      onClick={() => setPricingImages(prev => ({ ...prev, high_image: "" }))}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button onClick={handleSavePricingImages} disabled={isSavingImages}>
+                  {isSavingImages ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-2" />
+                  )}
+                  Save Images
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {/* Clear Files Confirmation Dialog */}
@@ -1131,6 +1344,38 @@ export default function AdminSettings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Hidden file inputs for image uploads */}
+      <input
+        type="file"
+        ref={draftImageRef}
+        className="hidden"
+        accept="image/*"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImageUpload(file, 'draft_image');
+        }}
+      />
+      <input
+        type="file"
+        ref={normalImageRef}
+        className="hidden"
+        accept="image/*"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImageUpload(file, 'normal_image');
+        }}
+      />
+      <input
+        type="file"
+        ref={highImageRef}
+        className="hidden"
+        accept="image/*"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImageUpload(file, 'high_image');
+        }}
+      />
     </div>
   );
 }
