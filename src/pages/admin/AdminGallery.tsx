@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,9 +23,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Plus, Trash2, ImageIcon, Loader2, Star, Eye, EyeOff } from "lucide-react";
+import { Plus, Trash2, ImageIcon, Loader2, Star, Eye, EyeOff, Search } from "lucide-react";
 import { toast } from "sonner";
 
 interface GalleryPost {
@@ -36,6 +43,8 @@ interface GalleryPost {
   customer_name: string;
   is_published: boolean;
   created_at: string;
+  order_id: string | null;
+  user_id: string | null;
 }
 
 interface Review {
@@ -46,26 +55,43 @@ interface Review {
   created_at: string;
 }
 
+interface OrderWithProfile {
+  id: string;
+  created_at: string;
+  status: string;
+  profile: {
+    first_name: string;
+    last_name: string;
+  } | null;
+  user_id: string;
+}
+
 export default function AdminGallery() {
   const { user } = useAuth();
   const [posts, setPosts] = useState<GalleryPost[]>([]);
   const [reviews, setReviews] = useState<Record<string, Review[]>>({});
+  const [orders, setOrders] = useState<OrderWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<GalleryPost | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [lookupLoading, setLookupLoading] = useState(false);
   
   const [newPost, setNewPost] = useState({
     title: "",
     description: "",
     customer_name: "",
+    order_id: "",
+    user_id: "",
     is_published: false,
   });
+  const [orderIdInput, setOrderIdInput] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPosts();
+    fetchOrders();
   }, []);
 
   const fetchPosts = async () => {
@@ -80,7 +106,6 @@ export default function AdminGallery() {
     } else {
       setPosts(data || []);
       
-      // Fetch reviews
       if (data && data.length > 0) {
         const { data: reviewsData } = await supabase
           .from("reviews")
@@ -100,6 +125,34 @@ export default function AdminGallery() {
     setLoading(false);
   };
 
+  const fetchOrders = async () => {
+    // Fetch completed orders with profiles
+    const { data } = await supabase
+      .from("orders")
+      .select("id, created_at, status, user_id")
+      .in("status", ["completed", "shipped", "ready_to_ship", "in_production", "payment_approved"])
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    if (data) {
+      // Fetch profiles for these orders
+      const userIds = [...new Set(data.map(o => o.user_id))];
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("user_id, first_name, last_name")
+        .in("user_id", userIds);
+
+      const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
+      
+      const ordersWithProfiles: OrderWithProfile[] = data.map(order => ({
+        ...order,
+        profile: profileMap.get(order.user_id) || null,
+      }));
+      
+      setOrders(ordersWithProfiles);
+    }
+  };
+
   const getImageUrl = (path: string) => {
     const { data } = supabase.storage.from("site-assets").getPublicUrl(path);
     return data.publicUrl;
@@ -113,19 +166,74 @@ export default function AdminGallery() {
     }
   };
 
+  const handleOrderSelect = (orderId: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (order && order.profile) {
+      setNewPost({
+        ...newPost,
+        order_id: orderId,
+        user_id: order.user_id,
+        customer_name: `${order.profile.first_name} ${order.profile.last_name}`,
+      });
+    }
+  };
+
+  const handleOrderIdLookup = async () => {
+    if (!orderIdInput.trim()) {
+      toast.error("Please enter an order ID");
+      return;
+    }
+
+    setLookupLoading(true);
+    
+    // Search for order by ID (partial match)
+    const { data: orderData, error } = await supabase
+      .from("orders")
+      .select("id, user_id")
+      .ilike("id", `%${orderIdInput.trim()}%`)
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !orderData) {
+      toast.error("Order not found");
+      setLookupLoading(false);
+      return;
+    }
+
+    // Get profile for this order
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("first_name, last_name")
+      .eq("user_id", orderData.user_id)
+      .maybeSingle();
+
+    if (profile) {
+      setNewPost({
+        ...newPost,
+        order_id: orderData.id,
+        user_id: orderData.user_id,
+        customer_name: `${profile.first_name} ${profile.last_name}`,
+      });
+      toast.success(`Found: ${profile.first_name} ${profile.last_name}`);
+    } else {
+      toast.error("Customer profile not found");
+    }
+    
+    setLookupLoading(false);
+  };
+
   const handleAddPost = async () => {
     if (!selectedFile) {
       toast.error("Please select an image");
       return;
     }
     if (!newPost.customer_name.trim()) {
-      toast.error("Please enter customer name");
+      toast.error("Please select an order or enter order ID");
       return;
     }
 
     setUploading(true);
 
-    // Upload image
     const fileExt = selectedFile.name.split(".").pop();
     const fileName = `gallery/${Date.now()}.${fileExt}`;
     
@@ -139,11 +247,12 @@ export default function AdminGallery() {
       return;
     }
 
-    // Create post
     const { error } = await supabase.from("gallery_posts").insert({
       title: newPost.title.trim() || null,
       description: newPost.description.trim() || null,
       customer_name: newPost.customer_name.trim(),
+      order_id: newPost.order_id || null,
+      user_id: newPost.user_id || null,
       image_path: fileName,
       is_published: newPost.is_published,
       created_by: user?.id,
@@ -154,12 +263,17 @@ export default function AdminGallery() {
     } else {
       toast.success("Post created!");
       setAddDialogOpen(false);
-      setNewPost({ title: "", description: "", customer_name: "", is_published: false });
-      setSelectedFile(null);
-      setPreviewUrl(null);
+      resetForm();
       fetchPosts();
     }
     setUploading(false);
+  };
+
+  const resetForm = () => {
+    setNewPost({ title: "", description: "", customer_name: "", order_id: "", user_id: "", is_published: false });
+    setOrderIdInput("");
+    setSelectedFile(null);
+    setPreviewUrl(null);
   };
 
   const handleTogglePublish = async (post: GalleryPost) => {
@@ -179,10 +293,8 @@ export default function AdminGallery() {
   const handleDeletePost = async () => {
     if (!deleteTarget) return;
 
-    // Delete image from storage
     await supabase.storage.from("site-assets").remove([deleteTarget.image_path]);
 
-    // Delete post (reviews will cascade delete)
     const { error } = await supabase
       .from("gallery_posts")
       .delete()
@@ -222,14 +334,14 @@ export default function AdminGallery() {
           <p className="text-muted-foreground">Manage your work showcase</p>
         </div>
 
-        <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <Dialog open={addDialogOpen} onOpenChange={(open) => { setAddDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="w-4 h-4 mr-2" />
               Add Post
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Add Gallery Post</DialogTitle>
             </DialogHeader>
@@ -250,14 +362,51 @@ export default function AdminGallery() {
                   />
                 )}
               </div>
+
               <div>
-                <Label>Customer Name *</Label>
-                <Input
-                  value={newPost.customer_name}
-                  onChange={(e) => setNewPost({ ...newPost, customer_name: e.target.value })}
-                  placeholder="e.g., John Doe"
-                />
+                <Label>Select Order</Label>
+                <Select onValueChange={handleOrderSelect} value={newPost.order_id}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select a completed order..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {orders.map((order) => (
+                      <SelectItem key={order.id} value={order.id}>
+                        {order.profile ? `${order.profile.first_name} ${order.profile.last_name}` : "Unknown"} - #{order.id.slice(0, 8)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+
+              <div className="text-center text-sm text-muted-foreground">— OR —</div>
+
+              <div>
+                <Label>Enter Order ID</Label>
+                <div className="flex gap-2 mt-1">
+                  <Input
+                    value={orderIdInput}
+                    onChange={(e) => setOrderIdInput(e.target.value)}
+                    placeholder="Paste order ID..."
+                  />
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={handleOrderIdLookup}
+                    disabled={lookupLoading}
+                  >
+                    {lookupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                  </Button>
+                </div>
+              </div>
+
+              {newPost.customer_name && (
+                <div className="p-3 bg-secondary rounded-lg">
+                  <p className="text-sm text-muted-foreground">Customer</p>
+                  <p className="font-medium">{newPost.customer_name}</p>
+                </div>
+              )}
+
               <div>
                 <Label>Title (Optional)</Label>
                 <Input
@@ -360,7 +509,6 @@ export default function AdminGallery() {
                   </Button>
                 </div>
 
-                {/* Reviews preview */}
                 {(reviews[post.id] || []).length > 0 && (
                   <div className="space-y-2 max-h-32 overflow-y-auto">
                     {(reviews[post.id] || []).slice(0, 3).map((review) => (
@@ -396,7 +544,6 @@ export default function AdminGallery() {
         </div>
       )}
 
-      {/* Delete confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

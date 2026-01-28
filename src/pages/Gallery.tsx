@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Star, MessageCircle, Loader2, Send } from "lucide-react";
+import { Star, MessageCircle, Loader2, Send, Lock } from "lucide-react";
 import { toast } from "sonner";
 
 interface GalleryPost {
@@ -15,6 +15,7 @@ interface GalleryPost {
   description: string | null;
   image_path: string;
   customer_name: string;
+  user_id: string | null;
   created_at: string;
 }
 
@@ -25,11 +26,10 @@ interface Review {
   rating: number;
   comment: string | null;
   created_at: string;
-  user_name?: string;
 }
 
 export default function Gallery() {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [posts, setPosts] = useState<GalleryPost[]>([]);
   const [reviews, setReviews] = useState<Record<string, Review[]>>({});
   const [loading, setLoading] = useState(true);
@@ -53,7 +53,6 @@ export default function Gallery() {
       toast.error("Failed to load gallery");
     } else {
       setPosts(data || []);
-      // Fetch reviews for all posts
       if (data && data.length > 0) {
         const { data: reviewsData } = await supabase
           .from("reviews")
@@ -88,9 +87,30 @@ export default function Gallery() {
     return (sum / postReviews.length).toFixed(1);
   };
 
+  const canUserReview = (post: GalleryPost) => {
+    // User can review only if they are the order owner
+    return user && post.user_id === user.id;
+  };
+
+  const hasUserReviewed = (postId: string) => {
+    if (!user) return false;
+    const postReviews = reviews[postId] || [];
+    return postReviews.some(r => r.user_id === user.id);
+  };
+
   const handleSubmitReview = async () => {
     if (!user || !selectedPost) {
       toast.error("Please sign in to leave a review");
+      return;
+    }
+
+    if (!canUserReview(selectedPost)) {
+      toast.error("Only the order owner can leave a review");
+      return;
+    }
+
+    if (hasUserReviewed(selectedPost.id)) {
+      toast.error("You have already reviewed this item");
       return;
     }
 
@@ -108,7 +128,11 @@ export default function Gallery() {
     });
 
     if (error) {
-      toast.error("Failed to submit review");
+      if (error.code === "42501") {
+        toast.error("Only the order owner can leave a review");
+      } else {
+        toast.error("Failed to submit review");
+      }
     } else {
       toast.success("Review submitted!");
       setNewReview({ rating: 5, comment: "" });
@@ -145,7 +169,6 @@ export default function Gallery() {
                     alt={post.title || "Gallery image"}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
-                  {/* Customer name overlay */}
                   <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
                     <p className="text-white font-medium">By: {post.customer_name}</p>
                     {post.title && (
@@ -195,7 +218,6 @@ export default function Gallery() {
                         <DialogTitle>Reviews for {post.title || "This Project"}</DialogTitle>
                       </DialogHeader>
 
-                      {/* Image preview */}
                       <div className="relative aspect-video rounded-lg overflow-hidden mb-4">
                         <img
                           src={getImageUrl(post.image_path)}
@@ -207,11 +229,10 @@ export default function Gallery() {
                         </div>
                       </div>
 
-                      {/* Reviews list */}
                       <div className="space-y-4 mb-4">
                         {(reviews[post.id] || []).length === 0 ? (
                           <p className="text-center text-muted-foreground py-4">
-                            No reviews yet. Be the first!
+                            No reviews yet.
                           </p>
                         ) : (
                           (reviews[post.id] || []).map((review) => (
@@ -237,10 +258,10 @@ export default function Gallery() {
                         )}
                       </div>
 
-                      {/* Add review form */}
-                      {user ? (
+                      {/* Review form - only for order owner */}
+                      {canUserReview(post) && !hasUserReviewed(post.id) ? (
                         <div className="border-t pt-4 space-y-3">
-                          <p className="font-medium text-sm">Leave a Review</p>
+                          <p className="font-medium text-sm">Leave Your Review</p>
                           <div className="flex items-center gap-1">
                             {[1, 2, 3, 4, 5].map((star) => (
                               <button
@@ -277,10 +298,23 @@ export default function Gallery() {
                             Submit Review
                           </Button>
                         </div>
+                      ) : hasUserReviewed(post.id) ? (
+                        <div className="border-t pt-4 text-center">
+                          <p className="text-sm text-muted-foreground">
+                            ✓ You have already reviewed this item
+                          </p>
+                        </div>
+                      ) : user ? (
+                        <div className="border-t pt-4 text-center">
+                          <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                            <Lock className="w-4 h-4" />
+                            <p className="text-sm">Only the customer who ordered this can add a review</p>
+                          </div>
+                        </div>
                       ) : (
                         <div className="border-t pt-4 text-center">
                           <p className="text-sm text-muted-foreground mb-2">
-                            Sign in to leave a review
+                            Sign in to view review options
                           </p>
                           <Button variant="outline" asChild>
                             <a href="/login">Sign In</a>
