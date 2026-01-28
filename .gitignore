@@ -25,6 +25,6 @@ dist-ssr
 
 
 
-.env_VPS.test
+.env_VPS.text
 database_files/db_backup.json
 
