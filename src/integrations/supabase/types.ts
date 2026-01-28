@@ -172,6 +172,50 @@ export type Database = {
           },
         ]
       }
+      gallery_posts: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          customer_name: string
+          description: string | null
+          id: string
+          image_path: string
+          is_published: boolean | null
+          order_id: string | null
+          title: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          customer_name: string
+          description?: string | null
+          id?: string
+          image_path: string
+          is_published?: boolean | null
+          order_id?: string | null
+          title?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          customer_name?: string
+          description?: string | null
+          id?: string
+          image_path?: string
+          is_published?: boolean | null
+          order_id?: string | null
+          title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gallery_posts_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           id: string
@@ -429,6 +473,41 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      reviews: {
+        Row: {
+          comment: string | null
+          created_at: string
+          gallery_post_id: string
+          id: string
+          rating: number
+          user_id: string
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          gallery_post_id: string
+          id?: string
+          rating: number
+          user_id: string
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          gallery_post_id?: string
+          id?: string
+          rating?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reviews_gallery_post_id_fkey"
+            columns: ["gallery_post_id"]
+            isOneToOne: false
+            referencedRelation: "gallery_posts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       system_settings: {
         Row: {

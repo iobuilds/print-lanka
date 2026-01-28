@@ -10,6 +10,7 @@ import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
 import Pricing from "./pages/Pricing";
 import Coupons from "./pages/Coupons";
+import Gallery from "./pages/Gallery";
 import Dashboard from "./pages/Dashboard";
 import Checkout from "./pages/Checkout";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
@@ -23,6 +24,7 @@ import AdminColors from "./pages/admin/AdminColors";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminSettings from "./pages/admin/AdminSettings";
 import AdminBankDetails from "./pages/admin/AdminBankDetails";
+import AdminGallery from "./pages/admin/AdminGallery";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -41,6 +43,7 @@ const App = () => (
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/coupons" element={<Coupons />} />
+            <Route path="/gallery" element={<Gallery />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/checkout" element={<Checkout />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
@@ -56,6 +59,7 @@ const App = () => (
               <Route path="users" element={<AdminUsers />} />
               <Route path="settings" element={<AdminSettings />} />
               <Route path="bank-details" element={<AdminBankDetails />} />
+              <Route path="gallery" element={<AdminGallery />} />
             </Route>
             
             <Route path="*" element={<NotFound />} />
