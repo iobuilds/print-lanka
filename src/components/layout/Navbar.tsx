@@ -82,6 +82,9 @@ export function Navbar() {
             <Link to="/pricing" className="text-muted-foreground hover:text-foreground transition-colors">
               Pricing Guide
             </Link>
+            <Link to="/gallery" className="text-muted-foreground hover:text-foreground transition-colors">
+              Gallery
+            </Link>
             <Link to="/coupons" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5">
               Coupons
               {availableCouponsCount > 0 && (
@@ -193,6 +196,13 @@ export function Navbar() {
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Pricing Guide
+              </Link>
+              <Link
+                to="/gallery"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Gallery
               </Link>
               <Link
                 to="/coupons"
