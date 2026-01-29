@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { User, LogOut, LayoutDashboard, Settings, Menu, X } from "lucide-react";
+import { User, LogOut, LayoutDashboard, Settings, Menu, X, ShoppingBag } from "lucide-react";
 import { useState, useEffect } from "react";
 import logo from "@/assets/logo.png";
 
@@ -84,6 +84,10 @@ export function Navbar() {
             </Link>
             <Link to="/gallery" className="text-muted-foreground hover:text-foreground transition-colors">
               Gallery
+            </Link>
+            <Link to="/shop" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5">
+              <ShoppingBag className="w-4 h-4" />
+              Shop
             </Link>
             <Link to="/coupons" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5">
               Coupons
@@ -203,6 +207,14 @@ export function Navbar() {
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Gallery
+              </Link>
+              <Link
+                to="/shop"
+                className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <ShoppingBag className="w-4 h-4" />
+                Shop
               </Link>
               <Link
                 to="/coupons"

@@ -3,16 +3,17 @@ import { useNavigate, Outlet, Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
   LayoutDashboard, Tag, Palette, Package, Users, Settings, 
-  ChevronLeft, Loader2, Building2, ImageIcon 
+  ChevronLeft, Loader2, Building2, ImageIcon, ShoppingBag, ShoppingCart, Truck 
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { Separator } from "@/components/ui/separator";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/orders", label: "Orders", icon: Package, showBadge: true },
+  { href: "/admin/orders", label: "3D Print Orders", icon: Package, showBadge: true },
   { href: "/admin/coupons", label: "Coupons", icon: Tag },
   { href: "/admin/colors", label: "Colors", icon: Palette },
   { href: "/admin/users", label: "Users", icon: Users },
@@ -21,11 +22,18 @@ const navItems = [
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
+const shopNavItems = [
+  { href: "/admin/shop-products", label: "Products", icon: ShoppingBag },
+  { href: "/admin/shop-orders", label: "Shop Orders", icon: ShoppingCart, showShopBadge: true },
+  { href: "/admin/shop-settings", label: "Shop Settings", icon: Truck },
+];
+
 export default function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, isAdminOrModerator, isLoading } = useAuth();
   const [pendingCount, setPendingCount] = useState(0);
+  const [shopPendingCount, setShopPendingCount] = useState(0);
 
   // Fetch pending orders count
   useEffect(() => {
@@ -37,7 +45,16 @@ export default function AdminLayout() {
       setPendingCount(count || 0);
     };
 
+    const fetchShopPendingCount = async () => {
+      const { count } = await supabase
+        .from("shop_orders")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "payment_submitted");
+      setShopPendingCount(count || 0);
+    };
+
     fetchPendingCount();
+    fetchShopPendingCount();
 
     // Subscribe to real-time changes
     const channel = supabase
@@ -47,6 +64,13 @@ export default function AdminLayout() {
         { event: "*", schema: "public", table: "orders" },
         () => {
           fetchPendingCount();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "shop_orders" },
+        () => {
+          fetchShopPendingCount();
         }
       )
       .subscribe();
@@ -104,7 +128,10 @@ export default function AdminLayout() {
           <h1 className="font-display font-bold text-xl mt-4">Admin Panel</h1>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-2">
+            3D Printing
+          </p>
           {navItems.map((item) => {
             const isActive = location.pathname === item.href;
             const showRedDot = item.showBadge && pendingCount > 0;
@@ -124,6 +151,36 @@ export default function AdminLayout() {
                 {showRedDot && (
                   <span className="absolute right-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-xs font-medium px-1">
                     {pendingCount}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+
+          <Separator className="my-4" />
+
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-2">
+            Shop
+          </p>
+          {shopNavItems.map((item) => {
+            const isActive = location.pathname === item.href;
+            const showRedDot = item.showShopBadge && shopPendingCount > 0;
+            return (
+              <Link
+                key={item.href}
+                to={item.href}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors relative",
+                  isActive 
+                    ? "bg-primary text-primary-foreground" 
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                )}
+              >
+                <item.icon className="w-5 h-5" />
+                {item.label}
+                {showRedDot && (
+                  <span className="absolute right-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-xs font-medium px-1">
+                    {shopPendingCount}
                   </span>
                 )}
               </Link>
