@@ -14,11 +14,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { 
   User, Package, Tag, Clock, CheckCircle, XCircle, 
   Truck, Printer, CreditCard, Edit2, Save, Loader2,
-  Calendar, Percent, ChevronRight, Upload, FileImage, X, AlertCircle, Building2
+  Calendar, Percent, ChevronRight, Upload, FileImage, X, AlertCircle, Building2, ShoppingBag
 } from "lucide-react";
 import { formatPrice, ORDER_STATUSES } from "@/lib/constants";
 import { toast } from "sonner";
 import { BankDetailsDialog } from "@/components/BankDetailsDialog";
+import { UserShopOrders } from "@/components/dashboard/UserShopOrders";
 
 interface OrderItem {
   id: string;
@@ -481,10 +482,14 @@ export default function Dashboard() {
           </div>
 
           <Tabs defaultValue={defaultTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-grid">
+            <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
               <TabsTrigger value="orders" className="gap-2">
                 <Package className="w-4 h-4" />
-                Orders
+                <span className="hidden sm:inline">3D Print</span> Orders
+              </TabsTrigger>
+              <TabsTrigger value="shop-orders" className="gap-2">
+                <ShoppingBag className="w-4 h-4" />
+                Shop
               </TabsTrigger>
               <TabsTrigger value="coupons" className="gap-2">
                 <Tag className="w-4 h-4" />
@@ -732,6 +737,11 @@ export default function Dashboard() {
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* Shop Orders Tab */}
+            <TabsContent value="shop-orders" className="space-y-4">
+              <UserShopOrders />
             </TabsContent>
 
             {/* Coupons Tab */}

@@ -16,6 +16,10 @@ import Checkout from "./pages/Checkout";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsConditions from "./pages/TermsConditions";
 import RefundPolicy from "./pages/RefundPolicy";
+import Shop from "./pages/Shop";
+import ShopProduct from "./pages/ShopProduct";
+import ShopCart from "./pages/ShopCart";
+import ShopCheckout from "./pages/ShopCheckout";
 import AdminLayout from "./pages/admin/AdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminOrders from "./pages/admin/AdminOrders";
@@ -25,6 +29,9 @@ import AdminUsers from "./pages/admin/AdminUsers";
 import AdminSettings from "./pages/admin/AdminSettings";
 import AdminBankDetails from "./pages/admin/AdminBankDetails";
 import AdminGallery from "./pages/admin/AdminGallery";
+import AdminShopProducts from "./pages/admin/AdminShopProducts";
+import AdminShopOrders from "./pages/admin/AdminShopOrders";
+import AdminShopSettings from "./pages/admin/AdminShopSettings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -50,6 +57,12 @@ const App = () => (
             <Route path="/terms-conditions" element={<TermsConditions />} />
             <Route path="/refund-policy" element={<RefundPolicy />} />
             
+            {/* Shop Routes */}
+            <Route path="/shop" element={<Shop />} />
+            <Route path="/shop/product/:id" element={<ShopProduct />} />
+            <Route path="/shop/cart" element={<ShopCart />} />
+            <Route path="/shop/checkout" element={<ShopCheckout />} />
+            
             {/* Admin Routes */}
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<AdminDashboard />} />
@@ -60,6 +73,9 @@ const App = () => (
               <Route path="settings" element={<AdminSettings />} />
               <Route path="bank-details" element={<AdminBankDetails />} />
               <Route path="gallery" element={<AdminGallery />} />
+              <Route path="shop-products" element={<AdminShopProducts />} />
+              <Route path="shop-orders" element={<AdminShopOrders />} />
+              <Route path="shop-settings" element={<AdminShopSettings />} />
             </Route>
             
             <Route path="*" element={<NotFound />} />
