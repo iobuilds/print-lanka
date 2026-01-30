@@ -8,6 +8,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -36,12 +43,18 @@ interface Product {
   is_active: boolean;
   stock: number;
   created_at: string;
+  category_id: string | null;
 }
 
 interface ProductImage {
   id: string;
   image_path: string;
   sort_order: number;
+}
+
+interface Category {
+  id: string;
+  name: string;
 }
 
 export default function AdminShopProducts() {
@@ -57,10 +70,24 @@ export default function AdminShopProducts() {
     price: "",
     stock: "",
     is_active: true,
+    category_id: "",
   });
   const [mainImage, setMainImage] = useState<File | null>(null);
   const [additionalImages, setAdditionalImages] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const { data: categories } = useQuery({
+    queryKey: ["admin-categories"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("product_categories")
+        .select("id, name")
+        .eq("is_active", true)
+        .order("sort_order");
+      if (error) throw error;
+      return data as Category[];
+    },
+  });
 
   const { data: products, isLoading } = useQuery({
     queryKey: ["admin-shop-products"],
@@ -81,7 +108,7 @@ export default function AdminShopProducts() {
   };
 
   const resetForm = () => {
-    setFormData({ name: "", description: "", price: "", stock: "", is_active: true });
+    setFormData({ name: "", description: "", price: "", stock: "", is_active: true, category_id: "" });
     setMainImage(null);
     setAdditionalImages([]);
     setEditingProduct(null);
@@ -100,6 +127,7 @@ export default function AdminShopProducts() {
       price: product.price.toString(),
       stock: product.stock.toString(),
       is_active: product.is_active,
+      category_id: product.category_id || "",
     });
     setIsDialogOpen(true);
   };
@@ -143,6 +171,7 @@ export default function AdminShopProducts() {
             price: parseFloat(formData.price),
             stock: parseInt(formData.stock) || 0,
             is_active: formData.is_active,
+            category_id: formData.category_id || null,
             ...(mainImage ? { main_image: mainImagePath } : {}),
           })
           .eq("id", editingProduct.id);
@@ -172,6 +201,7 @@ export default function AdminShopProducts() {
             price: parseFloat(formData.price),
             stock: parseInt(formData.stock) || 0,
             is_active: formData.is_active,
+            category_id: formData.category_id || null,
             main_image: mainImagePath,
             created_by: user?.id,
           })
@@ -282,6 +312,24 @@ export default function AdminShopProducts() {
                     placeholder="Product description"
                     rows={3}
                   />
+                </div>
+                <div className="col-span-2">
+                  <Label>Category</Label>
+                  <Select
+                    value={formData.category_id}
+                    onValueChange={(value) => setFormData({ ...formData, category_id: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories?.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 

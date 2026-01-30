@@ -3,7 +3,8 @@ import { useNavigate, Outlet, Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
   LayoutDashboard, Tag, Palette, Package, Users, Settings, 
-  ChevronLeft, Loader2, Building2, ImageIcon, ShoppingBag, ShoppingCart, Truck 
+  ChevronLeft, Loader2, Building2, ImageIcon, ShoppingBag, ShoppingCart, Truck,
+  FolderOpen, MessageSquare
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,8 +25,10 @@ const navItems = [
 
 const shopNavItems = [
   { href: "/admin/shop-products", label: "Products", icon: ShoppingBag },
+  { href: "/admin/shop-categories", label: "Categories", icon: FolderOpen },
   { href: "/admin/shop-orders", label: "Shop Orders", icon: ShoppingCart, showShopBadge: true },
   { href: "/admin/shop-settings", label: "Shop Settings", icon: Truck },
+  { href: "/admin/sms-campaigns", label: "SMS Campaigns", icon: MessageSquare },
 ];
 
 export default function AdminLayout() {

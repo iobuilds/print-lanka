@@ -438,6 +438,33 @@ export type Database = {
           },
         ]
       }
+      product_categories: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean | null
+          name: string
+          slug: string
+          sort_order: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          name: string
+          slug: string
+          sort_order?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          slug?: string
+          sort_order?: number | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           address: string
@@ -715,6 +742,7 @@ export type Database = {
       }
       shop_products: {
         Row: {
+          category_id: string | null
           created_at: string | null
           created_by: string | null
           description: string | null
@@ -727,6 +755,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          category_id?: string | null
           created_at?: string | null
           created_by?: string | null
           description?: string | null
@@ -739,6 +768,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          category_id?: string | null
           created_at?: string | null
           created_by?: string | null
           description?: string | null
@@ -749,6 +779,94 @@ export type Database = {
           price?: number
           stock?: number | null
           updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shop_products_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "product_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_campaign_recipients: {
+        Row: {
+          campaign_id: string
+          id: string
+          phone: string
+          provider_response: string | null
+          sent_at: string | null
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          campaign_id: string
+          id?: string
+          phone: string
+          provider_response?: string | null
+          sent_at?: string | null
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          campaign_id?: string
+          id?: string
+          phone?: string
+          provider_response?: string | null
+          sent_at?: string | null
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_campaign_recipients_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "sms_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_campaigns: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          message: string
+          name: string
+          recipient_count: number | null
+          recipient_filter: Json | null
+          scheduled_at: string | null
+          sent_at: string | null
+          sent_count: number | null
+          status: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          message: string
+          name: string
+          recipient_count?: number | null
+          recipient_filter?: Json | null
+          scheduled_at?: string | null
+          sent_at?: string | null
+          sent_count?: number | null
+          status?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          message?: string
+          name?: string
+          recipient_count?: number | null
+          recipient_filter?: Json | null
+          scheduled_at?: string | null
+          sent_at?: string | null
+          sent_count?: number | null
+          status?: string | null
         }
         Relationships: []
       }
