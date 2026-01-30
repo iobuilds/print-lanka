@@ -186,6 +186,26 @@ export default function ShopCheckout() {
       queryClient.invalidateQueries({ queryKey: ["cart-items"] });
       queryClient.invalidateQueries({ queryKey: ["cart-count"] });
 
+      // Send notifications (admin + thank you to user)
+      try {
+        await supabase.functions.invoke("send-order-notification", {
+          body: {
+            order_id: order.id,
+            order_type: "shop",
+            notification_type: "new_order",
+          },
+        });
+        await supabase.functions.invoke("send-order-notification", {
+          body: {
+            order_id: order.id,
+            order_type: "shop",
+            notification_type: "thank_you",
+          },
+        });
+      } catch (notifyError) {
+        console.error("Notification error:", notifyError);
+      }
+
       toast({
         title: "Order placed successfully!",
         description: "Your payment is being verified. You'll receive an SMS notification once approved.",

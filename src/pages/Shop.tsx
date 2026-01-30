@@ -7,9 +7,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ShoppingCart, Search, Package } from "lucide-react";
+import { ShoppingCart, Search, Package, Filter } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 interface Product {
   id: string;
@@ -18,12 +19,34 @@ interface Product {
   price: number;
   main_image: string;
   stock: number;
+  category_id: string | null;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
 }
 
 export default function Shop() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+  // Fetch categories
+  const { data: categories } = useQuery({
+    queryKey: ["shop-categories"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("product_categories")
+        .select("id, name, slug")
+        .eq("is_active", true)
+        .order("sort_order");
+      if (error) throw error;
+      return data as Category[];
+    },
+  });
 
   const { data: products, isLoading } = useQuery({
     queryKey: ["shop-products"],
@@ -72,11 +95,13 @@ export default function Shop() {
     }
   };
 
-  const filteredProducts = products?.filter(
-    (p) =>
+  const filteredProducts = products?.filter((p) => {
+    const matchesSearch =
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.description?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+      p.description?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = !selectedCategory || p.category_id === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
 
   const getImageUrl = (path: string) => {
     if (path.startsWith("http")) return path;
@@ -117,6 +142,29 @@ export default function Shop() {
             )}
           </div>
         </div>
+
+        {/* Category Filter */}
+        {categories && categories.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-6">
+            <Button
+              variant={selectedCategory === null ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedCategory(null)}
+            >
+              All
+            </Button>
+            {categories.map((category) => (
+              <Button
+                key={category.id}
+                variant={selectedCategory === category.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedCategory(category.id)}
+              >
+                {category.name}
+              </Button>
+            ))}
+          </div>
+        )}
 
         {/* Products Grid */}
         {isLoading ? (

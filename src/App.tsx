@@ -32,6 +32,8 @@ import AdminGallery from "./pages/admin/AdminGallery";
 import AdminShopProducts from "./pages/admin/AdminShopProducts";
 import AdminShopOrders from "./pages/admin/AdminShopOrders";
 import AdminShopSettings from "./pages/admin/AdminShopSettings";
+import AdminCategories from "./pages/admin/AdminCategories";
+import AdminSMSCampaigns from "./pages/admin/AdminSMSCampaigns";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -74,8 +76,10 @@ const App = () => (
               <Route path="bank-details" element={<AdminBankDetails />} />
               <Route path="gallery" element={<AdminGallery />} />
               <Route path="shop-products" element={<AdminShopProducts />} />
+              <Route path="shop-categories" element={<AdminCategories />} />
               <Route path="shop-orders" element={<AdminShopOrders />} />
               <Route path="shop-settings" element={<AdminShopSettings />} />
+              <Route path="sms-campaigns" element={<AdminSMSCampaigns />} />
             </Route>
             
             <Route path="*" element={<NotFound />} />
