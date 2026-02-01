@@ -470,39 +470,40 @@ export default function Dashboard() {
     ) && order.total_price;
   };
 
-  const handlePrintInvoice = () => {
-    if (!invoiceRef.current) return;
+  const handleDownloadInvoice = async () => {
+    if (!invoiceRef.current || !invoiceOrder) return;
     
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      toast.error("Please allow popups to print invoice");
-      return;
+    toast.loading("Generating PDF...", { id: "pdf-generation" });
+    
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const jsPDF = (await import('jspdf')).default;
+      
+      const canvas = await html2canvas(invoiceRef.current, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+      
+      const imgWidth = 210; // A4 width in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+      pdf.save(`Invoice-${invoiceOrder.id.slice(0, 8).toUpperCase()}.pdf`);
+      
+      toast.success("Invoice downloaded!", { id: "pdf-generation" });
+    } catch (error) {
+      console.error("PDF generation failed:", error);
+      toast.error("Failed to generate PDF", { id: "pdf-generation" });
     }
-    
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Invoice - IO Builds</title>
-          <style>
-            @media print {
-              body { margin: 0; padding: 20px; }
-              @page { size: A4; margin: 10mm; }
-            }
-            body { font-family: Arial, sans-serif; }
-          </style>
-        </head>
-        <body>
-          ${invoiceRef.current.innerHTML}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    
-    // Wait for images to load
-    setTimeout(() => {
-      printWindow.print();
-    }, 500);
   };
 
   if (authLoading) {
@@ -1127,9 +1128,9 @@ export default function Dashboard() {
                 <Button variant="outline" onClick={() => setInvoiceOrder(null)}>
                   Close
                 </Button>
-                <Button onClick={handlePrintInvoice} className="gap-2">
+                <Button onClick={handleDownloadInvoice} className="gap-2">
                   <Download className="w-4 h-4" />
-                  Print / Download PDF
+                  Download PDF
                 </Button>
               </DialogFooter>
             </>

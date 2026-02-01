@@ -47,11 +47,15 @@ interface InvoiceSettings {
   company_address: string;
   company_phone: string;
   company_email: string;
-  bank_name: string;
-  account_number: string;
-  account_name: string;
-  branch: string;
   footer_note: string;
+}
+
+interface BankDetail {
+  id: string;
+  bank_name: string;
+  account_name: string;
+  account_number: string;
+  branch: string | null;
 }
 
 const defaultInvoiceSettings: InvoiceSettings = {
@@ -59,10 +63,6 @@ const defaultInvoiceSettings: InvoiceSettings = {
   company_address: "532/1/E, Gonahena Road, Kadawatha",
   company_phone: "0717367497",
   company_email: "contact@iobuilds.lk",
-  bank_name: "Commercial Bank",
-  account_number: "1234567890",
-  account_name: "IO Builds",
-  branch: "Kadawatha",
   footer_note: "Thank you for your business!",
 };
 
@@ -83,6 +83,7 @@ export const Invoice = forwardRef<HTMLDivElement, InvoiceProps>(
     ref
   ) => {
     const [settings, setSettings] = useState<InvoiceSettings>(defaultInvoiceSettings);
+    const [bankDetails, setBankDetails] = useState<BankDetail[]>([]);
 
     useEffect(() => {
       const fetchSettings = async () => {
@@ -97,7 +98,20 @@ export const Invoice = forwardRef<HTMLDivElement, InvoiceProps>(
         }
       };
 
+      const fetchBankDetails = async () => {
+        const { data, error } = await supabase
+          .from("bank_details")
+          .select("id, bank_name, account_name, account_number, branch")
+          .eq("is_active", true)
+          .order("created_at", { ascending: true });
+
+        if (!error && data) {
+          setBankDetails(data);
+        }
+      };
+
       fetchSettings();
+      fetchBankDetails();
     }, []);
 
     // Calculate pricing breakdown
@@ -244,14 +258,19 @@ export const Invoice = forwardRef<HTMLDivElement, InvoiceProps>(
         </div>
 
         {/* Bank Details (if not paid) */}
-        {!isPaid && (
+        {!isPaid && bankDetails.length > 0 && (
           <div className="mt-6 p-4 bg-gray-50 rounded border">
             <h3 className="font-bold text-gray-700 mb-2">Bank Transfer Details</h3>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <p><strong>Bank:</strong> {settings.bank_name}</p>
-              <p><strong>Branch:</strong> {settings.branch}</p>
-              <p><strong>Account Name:</strong> {settings.account_name}</p>
-              <p><strong>Account Number:</strong> {settings.account_number}</p>
+            <div className="space-y-3">
+              {bankDetails.map((bank, index) => (
+                <div key={bank.id} className="grid grid-cols-2 gap-2 text-sm">
+                  {index > 0 && <div className="col-span-2 border-t pt-2"></div>}
+                  <p><strong>Bank:</strong> {bank.bank_name}</p>
+                  <p><strong>Branch:</strong> {bank.branch || "-"}</p>
+                  <p><strong>Account Name:</strong> {bank.account_name}</p>
+                  <p><strong>Account Number:</strong> {bank.account_number}</p>
+                </div>
+              ))}
             </div>
           </div>
         )}
