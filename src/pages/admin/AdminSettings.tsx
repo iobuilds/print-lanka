@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Settings, MessageSquare, Truck, Save, Loader2, TestTube, 
   DollarSign, Palette, Package, Trash2, Database, Download, 
-  Upload, AlertTriangle, CheckCircle, HardDrive, FileBox, Phone, MapPin, Image
+  Upload, AlertTriangle, CheckCircle, HardDrive, FileBox, Phone, MapPin, Image, FileText
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -67,6 +67,14 @@ interface PricingImages {
   high_image: string;
 }
 
+interface InvoiceConfig {
+  company_name: string;
+  company_address: string;
+  company_phone: string;
+  company_email: string;
+  footer_note: string;
+}
+
 const defaultSmsConfig: SMSConfig = {
   provider: "dialog",
   api_key: "",
@@ -113,18 +121,28 @@ const defaultPricingImages: PricingImages = {
   high_image: "",
 };
 
+const defaultInvoiceConfig: InvoiceConfig = {
+  company_name: "IO Builds",
+  company_address: "532/1/E, Gonahena Road, Kadawatha",
+  company_phone: "0717367497",
+  company_email: "contact@iobuilds.lk",
+  footer_note: "Thank you for your business!",
+};
+
 export default function AdminSettings() {
   const [smsConfig, setSmsConfig] = useState<SMSConfig>(defaultSmsConfig);
   const [deliveryConfig, setDeliveryConfig] = useState<DeliveryConfig>(defaultDeliveryConfig);
   const [pricingConfig, setPricingConfig] = useState<PricingConfig>(defaultPricingConfig);
   const [contactConfig, setContactConfig] = useState<ContactConfig>(defaultContactConfig);
   const [pricingImages, setPricingImages] = useState<PricingImages>(defaultPricingImages);
+  const [invoiceConfig, setInvoiceConfig] = useState<InvoiceConfig>(defaultInvoiceConfig);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSms, setIsSavingSms] = useState(false);
   const [isSavingDelivery, setIsSavingDelivery] = useState(false);
   const [isSavingPricing, setIsSavingPricing] = useState(false);
   const [isSavingContact, setIsSavingContact] = useState(false);
   const [isSavingImages, setIsSavingImages] = useState(false);
+  const [isSavingInvoice, setIsSavingInvoice] = useState(false);
   const [uploadingImage, setUploadingImage] = useState<string | null>(null);
   const [testPhone, setTestPhone] = useState("");
   const [isTesting, setIsTesting] = useState(false);
@@ -153,12 +171,13 @@ export default function AdminSettings() {
     setIsLoading(true);
     
     // Fetch all configs in parallel
-    const [smsResult, deliveryResult, pricingResult, contactResult, imagesResult] = await Promise.all([
+    const [smsResult, deliveryResult, pricingResult, contactResult, imagesResult, invoiceResult] = await Promise.all([
       supabase.from("system_settings").select("value").eq("key", "sms_config").single(),
       supabase.from("system_settings").select("value").eq("key", "delivery_config").single(),
       supabase.from("system_settings").select("value").eq("key", "pricing_config").single(),
       supabase.from("system_settings").select("value").eq("key", "contact_config").single(),
       supabase.from("system_settings").select("value").eq("key", "pricing_images").single(),
+      supabase.from("system_settings").select("value").eq("key", "invoice_settings").single(),
     ]);
 
     if (smsResult.data?.value && typeof smsResult.data.value === 'object' && !Array.isArray(smsResult.data.value)) {
@@ -179,6 +198,10 @@ export default function AdminSettings() {
 
     if (imagesResult.data?.value && typeof imagesResult.data.value === 'object' && !Array.isArray(imagesResult.data.value)) {
       setPricingImages({ ...defaultPricingImages, ...(imagesResult.data.value as unknown as PricingImages) });
+    }
+
+    if (invoiceResult.data?.value && typeof invoiceResult.data.value === 'object' && !Array.isArray(invoiceResult.data.value)) {
+      setInvoiceConfig({ ...defaultInvoiceConfig, ...(invoiceResult.data.value as unknown as InvoiceConfig) });
     }
 
     setIsLoading(false);
@@ -319,6 +342,28 @@ export default function AdminSettings() {
       toast.error(error.message || "Failed to save contact settings");
     } finally {
       setIsSavingContact(false);
+    }
+  };
+
+  const handleSaveInvoiceConfig = async () => {
+    setIsSavingInvoice(true);
+    try {
+      const { error } = await supabase
+        .from("system_settings")
+        .upsert({
+          key: "invoice_settings",
+          value: invoiceConfig as any,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: "key"
+        });
+
+      if (error) throw error;
+      toast.success("Invoice settings saved successfully");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save invoice settings");
+    } finally {
+      setIsSavingInvoice(false);
     }
   };
 
@@ -553,7 +598,7 @@ export default function AdminSettings() {
       </div>
 
       <Tabs defaultValue="pricing" className="space-y-6">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="pricing" className="gap-2">
             <DollarSign className="w-4 h-4" />
             Pricing
@@ -573,6 +618,10 @@ export default function AdminSettings() {
           <TabsTrigger value="contact" className="gap-2">
             <Phone className="w-4 h-4" />
             Contact
+          </TabsTrigger>
+          <TabsTrigger value="invoice" className="gap-2">
+            <FileText className="w-4 h-4" />
+            Invoice
           </TabsTrigger>
           <TabsTrigger value="images" className="gap-2">
             <Image className="w-4 h-4" />
@@ -1129,6 +1178,102 @@ export default function AdminSettings() {
                     <Save className="w-4 h-4 mr-2" />
                   )}
                   Save Contact Settings
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Invoice Settings */}
+        <TabsContent value="invoice" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Invoice Configuration
+              </CardTitle>
+              <CardDescription>
+                Configure company details shown on PDF invoices
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="company-name">Company Name</Label>
+                  <Input
+                    id="company-name"
+                    placeholder="IO Builds"
+                    value={invoiceConfig.company_name}
+                    onChange={(e) => 
+                      setInvoiceConfig({ ...invoiceConfig, company_name: e.target.value })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="company-email">Company Email</Label>
+                  <Input
+                    id="company-email"
+                    type="email"
+                    placeholder="contact@iobuilds.lk"
+                    value={invoiceConfig.company_email}
+                    onChange={(e) => 
+                      setInvoiceConfig({ ...invoiceConfig, company_email: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="company-phone">Company Phone</Label>
+                  <Input
+                    id="company-phone"
+                    placeholder="0717367497"
+                    value={invoiceConfig.company_phone}
+                    onChange={(e) => 
+                      setInvoiceConfig({ ...invoiceConfig, company_phone: e.target.value })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="company-address">Company Address</Label>
+                  <Input
+                    id="company-address"
+                    placeholder="532/1/E, Gonahena Road, Kadawatha"
+                    value={invoiceConfig.company_address}
+                    onChange={(e) => 
+                      setInvoiceConfig({ ...invoiceConfig, company_address: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="footer-note">Invoice Footer Note</Label>
+                <Textarea
+                  id="footer-note"
+                  placeholder="Thank you for your business!"
+                  value={invoiceConfig.footer_note}
+                  onChange={(e) => 
+                    setInvoiceConfig({ ...invoiceConfig, footer_note: e.target.value })
+                  }
+                  rows={2}
+                />
+                <p className="text-xs text-muted-foreground">
+                  This message appears at the bottom of each invoice
+                </p>
+              </div>
+
+              <div className="flex justify-end">
+                <Button onClick={handleSaveInvoiceConfig} disabled={isSavingInvoice}>
+                  {isSavingInvoice ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-2" />
+                  )}
+                  Save Invoice Settings
                 </Button>
               </div>
             </CardContent>
