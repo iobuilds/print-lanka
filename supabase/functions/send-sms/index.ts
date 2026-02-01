@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 interface SMSRequest {
-  phone: string;
+  phone: string; // Can be single number or comma-separated numbers
   message: string;
   order_id?: string;
   user_id: string;
@@ -36,7 +36,7 @@ serve(async (req) => {
 
     const { phone, message, order_id, user_id }: SMSRequest = await req.json();
 
-    // Format phone number to Sri Lankan international format
+    // Format phone number(s) to Sri Lankan international format
     const formatSriLankanPhone = (phoneNum: string): string => {
       let cleaned = phoneNum.replace(/[^0-9]/g, '');
       // If starts with 0, replace with 94
@@ -50,17 +50,20 @@ serve(async (req) => {
       return cleaned;
     };
 
-    const formattedPhone = formatSriLankanPhone(phone);
+    // Handle multiple phone numbers (comma-separated)
+    const phoneNumbers = phone.split(',').map(p => p.trim()).filter(p => p.length > 0);
+    const formattedPhones = phoneNumbers.map(formatSriLankanPhone);
+    const recipient = formattedPhones.join(',');
     
     console.log('Sending SMS via Text.lk v3 API');
-    console.log('To:', formattedPhone);
+    console.log('To:', recipient);
     console.log('Message:', message.substring(0, 50) + '...');
 
-    // Log the notification attempt
+    // Log the notification attempt (for first phone number)
     const { data: notification, error: notifError } = await supabase
       .from('notifications')
       .insert({
-        phone: formattedPhone,
+        phone: formattedPhones[0] || recipient,
         message,
         order_id,
         user_id,
@@ -84,7 +87,7 @@ serve(async (req) => {
         'Accept': 'application/json',
       },
       body: JSON.stringify({
-        recipient: formattedPhone,
+        recipient: recipient,
         sender_id: 'IO Builds',
         type: 'plain',
         message: message,
