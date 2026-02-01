@@ -275,6 +275,7 @@ export type Database = {
           price: number | null
           quality: Database["public"]["Enums"]["print_quality"]
           quantity: number
+          weight_grams: number | null
         }
         Insert: {
           color?: string
@@ -290,6 +291,7 @@ export type Database = {
           price?: number | null
           quality?: Database["public"]["Enums"]["print_quality"]
           quantity?: number
+          weight_grams?: number | null
         }
         Update: {
           color?: string
@@ -305,6 +307,7 @@ export type Database = {
           price?: number | null
           quality?: Database["public"]["Enums"]["print_quality"]
           quantity?: number
+          weight_grams?: number | null
         }
         Relationships: [
           {
