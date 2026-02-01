@@ -17,6 +17,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import JSZip from "jszip";
 
 interface BackupSettings {
   autoBackupEnabled: boolean;
@@ -25,35 +27,41 @@ interface BackupSettings {
   retainCount: number;
 }
 
-interface BackupData {
+interface BackupManifest {
   version: string;
   createdAt: string;
   type: "data_only" | "full";
-  tables: {
-    available_colors: unknown[];
-    bank_details: unknown[];
-    coupons: unknown[];
-    product_categories: unknown[];
-    shop_products: unknown[];
-    shop_product_images: unknown[];
-    system_settings: unknown[];
-  };
-  storage?: {
-    buckets: string[];
-    files: { bucket: string; path: string; url: string }[];
-  };
+  tables: Record<string, unknown[]>;
+  files?: { bucket: string; path: string; zipPath: string }[];
 }
 
-// Tables to backup in data-only mode
-const DATA_TABLES = [
+// All tables to backup
+const ALL_TABLES = [
   "available_colors",
-  "bank_details", 
+  "bank_details",
   "coupons",
   "product_categories",
   "shop_products",
   "shop_product_images",
   "system_settings",
+  "gallery_posts",
+  "profiles",
+  "orders",
+  "order_items",
+  "payment_slips",
+  "shop_orders",
+  "shop_order_items",
+  "shop_payment_slips",
+  "shop_cart_items",
+  "user_coupons",
+  "user_roles",
+  "notifications",
+  "sms_campaigns",
+  "sms_campaign_recipients",
 ] as const;
+
+// Storage buckets to backup
+const STORAGE_BUCKETS = ["models", "payment-slips", "site-assets", "shop-products"];
 
 export default function AdminBackup() {
   const { toast } = useToast();
@@ -69,6 +77,8 @@ export default function AdminBackup() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [backupProgress, setBackupProgress] = useState(0);
+  const [backupStatus, setBackupStatus] = useState("");
 
   useEffect(() => {
     fetchSettings();
@@ -158,65 +168,89 @@ export default function AdminBackup() {
 
   const performBackup = async (includeFiles: boolean) => {
     setIsBackingUp(true);
+    setBackupProgress(0);
+    setBackupStatus("Initializing backup...");
+    
     try {
-      const backup: BackupData = {
-        version: "1.0",
+      const zip = new JSZip();
+      const manifest: BackupManifest = {
+        version: "2.0",
         createdAt: new Date().toISOString(),
         type: includeFiles ? "full" : "data_only",
-        tables: {
-          available_colors: [],
-          bank_details: [],
-          coupons: [],
-          product_categories: [],
-          shop_products: [],
-          shop_product_images: [],
-          system_settings: [],
-        },
+        tables: {},
+        files: [],
       };
 
       // Fetch all table data
-      for (const table of DATA_TABLES) {
+      const tablesToBackup = includeFiles ? ALL_TABLES : ALL_TABLES.slice(0, 7); // Config tables only for data backup
+      const totalSteps = tablesToBackup.length + (includeFiles ? STORAGE_BUCKETS.length : 0);
+      let currentStep = 0;
+
+      for (const table of tablesToBackup) {
+        setBackupStatus(`Backing up table: ${table}...`);
         const { data, error } = await supabase.from(table).select("*");
         if (error) {
           console.error(`Error fetching ${table}:`, error);
-          continue;
+        } else {
+          manifest.tables[table] = data || [];
         }
-        backup.tables[table] = data || [];
+        currentStep++;
+        setBackupProgress((currentStep / totalSteps) * 100);
       }
 
-      // If including files, get storage info
+      // If including files, download all files from storage
       if (includeFiles) {
-        backup.storage = {
-          buckets: ["shop-products", "site-assets"],
-          files: [],
-        };
-
-        for (const bucket of backup.storage.buckets) {
-          const { data: files, error } = await supabase.storage.from(bucket).list("", { limit: 1000 });
-          if (error) {
-            console.error(`Error listing ${bucket}:`, error);
-            continue;
-          }
-
-          for (const file of files || []) {
-            if (file.name) {
-              const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(file.name);
-              backup.storage.files.push({
+        const storageFolder = zip.folder("storage");
+        
+        for (const bucket of STORAGE_BUCKETS) {
+          setBackupStatus(`Backing up storage bucket: ${bucket}...`);
+          const bucketFolder = storageFolder?.folder(bucket);
+          
+          // List all files in bucket (including nested)
+          const files = await listAllFilesInBucket(bucket);
+          
+          for (const file of files) {
+            try {
+              const { data, error } = await supabase.storage.from(bucket).download(file.path);
+              if (error) {
+                console.error(`Error downloading ${bucket}/${file.path}:`, error);
+                continue;
+              }
+              
+              bucketFolder?.file(file.path, data);
+              manifest.files?.push({
                 bucket,
-                path: file.name,
-                url: urlData.publicUrl,
+                path: file.path,
+                zipPath: `storage/${bucket}/${file.path}`,
               });
+            } catch (err) {
+              console.error(`Error processing ${bucket}/${file.path}:`, err);
             }
           }
+          
+          currentStep++;
+          setBackupProgress((currentStep / totalSteps) * 100);
         }
       }
 
-      // Download as JSON file
-      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      // Add manifest to zip
+      setBackupStatus("Creating backup archive...");
+      zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+
+      // Generate and download zip
+      const blob = await zip.generateAsync({ 
+        type: "blob",
+        compression: "DEFLATE",
+        compressionOptions: { level: 6 }
+      }, (metadata) => {
+        setBackupProgress(metadata.percent);
+        setBackupStatus(`Compressing: ${Math.round(metadata.percent)}%`);
+      });
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `backup-${includeFiles ? "full" : "data"}-${new Date().toISOString().split("T")[0]}.json`;
+      a.download = `backup-${includeFiles ? "full" : "data"}-${new Date().toISOString().split("T")[0]}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -235,32 +269,84 @@ export default function AdminBackup() {
       toast({ title: "Backup failed", description: "Could not create backup.", variant: "destructive" });
     } finally {
       setIsBackingUp(false);
+      setBackupProgress(0);
+      setBackupStatus("");
     }
+  };
+
+  // Helper to list all files in a bucket recursively
+  const listAllFilesInBucket = async (bucket: string, prefix = ""): Promise<{ path: string }[]> => {
+    const files: { path: string }[] = [];
+    
+    const { data, error } = await supabase.storage.from(bucket).list(prefix, { limit: 1000 });
+    if (error) {
+      console.error(`Error listing ${bucket}/${prefix}:`, error);
+      return files;
+    }
+
+    for (const item of data || []) {
+      const fullPath = prefix ? `${prefix}/${item.name}` : item.name;
+      
+      if (item.id === null) {
+        // It's a folder, recurse
+        const nestedFiles = await listAllFilesInBucket(bucket, fullPath);
+        files.push(...nestedFiles);
+      } else {
+        // It's a file
+        files.push({ path: fullPath });
+      }
+    }
+
+    return files;
   };
 
   const handleRestore = async () => {
     if (!selectedFile) return;
 
     setIsRestoring(true);
+    setBackupProgress(0);
+    setBackupStatus("Reading backup file...");
+    
     try {
-      const text = await selectedFile.text();
-      const backup: BackupData = JSON.parse(text);
+      const zip = await JSZip.loadAsync(selectedFile);
+      
+      // Read manifest
+      const manifestFile = zip.file("manifest.json");
+      if (!manifestFile) {
+        throw new Error("Invalid backup file: manifest.json not found");
+      }
+      
+      const manifestText = await manifestFile.async("string");
+      const manifest: BackupManifest = JSON.parse(manifestText);
 
-      if (!backup.version || !backup.tables) {
+      if (!manifest.version || !manifest.tables) {
         throw new Error("Invalid backup file format");
       }
 
-      // Restore each table using raw fetch for dynamic table names
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
 
-      for (const [tableName, rows] of Object.entries(backup.tables)) {
-        if (!Array.isArray(rows) || rows.length === 0) continue;
+      // Calculate total steps
+      const tableEntries = Object.entries(manifest.tables);
+      const filesToRestore = manifest.files || [];
+      const totalSteps = tableEntries.length + filesToRestore.length;
+      let currentStep = 0;
 
-        // Clear existing data first (for config tables)
-        if (["available_colors", "bank_details", "coupons", "product_categories", "system_settings"].includes(tableName)) {
+      // Restore tables
+      for (const [tableName, rows] of tableEntries) {
+        setBackupStatus(`Restoring table: ${tableName}...`);
+        
+        if (!Array.isArray(rows) || rows.length === 0) {
+          currentStep++;
+          setBackupProgress((currentStep / totalSteps) * 100);
+          continue;
+        }
+
+        // Clear existing data for config tables only
+        const configTables = ["available_colors", "bank_details", "coupons", "product_categories", "system_settings"];
+        if (configTables.includes(tableName)) {
           await fetch(`${supabaseUrl}/rest/v1/${tableName}?id=neq.00000000-0000-0000-0000-000000000000`, {
             method: "DELETE",
             headers: {
@@ -287,11 +373,47 @@ export default function AdminBackup() {
         if (!response.ok) {
           console.error(`Error restoring ${tableName}:`, await response.text());
         }
+        
+        currentStep++;
+        setBackupProgress((currentStep / totalSteps) * 100);
+      }
+
+      // Restore files if this is a full backup
+      if (manifest.type === "full" && filesToRestore.length > 0) {
+        for (const fileInfo of filesToRestore) {
+          setBackupStatus(`Restoring file: ${fileInfo.bucket}/${fileInfo.path}...`);
+          
+          const zipFile = zip.file(fileInfo.zipPath);
+          if (!zipFile) {
+            console.error(`File not found in zip: ${fileInfo.zipPath}`);
+            currentStep++;
+            setBackupProgress((currentStep / totalSteps) * 100);
+            continue;
+          }
+
+          try {
+            const fileData = await zipFile.async("blob");
+            
+            // Upload to storage
+            const { error } = await supabase.storage
+              .from(fileInfo.bucket)
+              .upload(fileInfo.path, fileData, { upsert: true });
+            
+            if (error) {
+              console.error(`Error uploading ${fileInfo.bucket}/${fileInfo.path}:`, error);
+            }
+          } catch (err) {
+            console.error(`Error restoring file ${fileInfo.zipPath}:`, err);
+          }
+          
+          currentStep++;
+          setBackupProgress((currentStep / totalSteps) * 100);
+        }
       }
 
       toast({ 
         title: "Restore complete", 
-        description: "Data has been restored from backup." 
+        description: `Restored ${tableEntries.length} tables${filesToRestore.length > 0 ? ` and ${filesToRestore.length} files` : ""}.`
       });
       setRestoreDialogOpen(false);
       setSelectedFile(null);
@@ -304,6 +426,8 @@ export default function AdminBackup() {
       });
     } finally {
       setIsRestoring(false);
+      setBackupProgress(0);
+      setBackupStatus("");
     }
   };
 
@@ -395,6 +519,16 @@ export default function AdminBackup() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {isBackingUp && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{backupStatus}</span>
+                  <span className="font-medium">{Math.round(backupProgress)}%</span>
+                </div>
+                <Progress value={backupProgress} className="h-2" />
+              </div>
+            )}
+            
             <Button
               className="w-full"
               onClick={() => performBackup(false)}
@@ -405,10 +539,10 @@ export default function AdminBackup() {
               ) : (
                 <Database className="w-4 h-4 mr-2" />
               )}
-              Download Data Backup
+              Download Data Backup (ZIP)
             </Button>
             <p className="text-xs text-muted-foreground text-center">
-              Includes: Colors, coupons, bank details, categories, products, settings
+              Configuration tables only: colors, coupons, bank details, categories, products, settings
             </p>
 
             <div className="border-t pt-4">
@@ -423,10 +557,10 @@ export default function AdminBackup() {
                 ) : (
                   <HardDrive className="w-4 h-4 mr-2" />
                 )}
-                Download Full Backup
+                Download Full Backup (ZIP)
               </Button>
               <p className="text-xs text-muted-foreground text-center mt-2">
-                Includes data + file storage references
+                ALL database tables + ALL storage files (models, payment slips, assets, products)
               </p>
             </div>
           </CardContent>
@@ -466,30 +600,40 @@ export default function AdminBackup() {
           <DialogHeader>
             <DialogTitle>Restore from Backup</DialogTitle>
             <DialogDescription>
-              Select a backup JSON file to restore your data. This will overwrite existing configuration data.
+              Select a backup ZIP file to restore your data. Full backups will also restore all storage files.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="backup-file">Backup File</Label>
+              <Label htmlFor="backup-file">Backup File (ZIP)</Label>
               <Input
                 id="backup-file"
                 type="file"
-                accept=".json"
+                accept=".zip"
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
               />
             </div>
 
             {selectedFile && (
               <p className="text-sm text-muted-foreground">
-                Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                Selected: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
               </p>
+            )}
+
+            {isRestoring && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{backupStatus}</span>
+                  <span className="font-medium">{Math.round(backupProgress)}%</span>
+                </div>
+                <Progress value={backupProgress} className="h-2" />
+              </div>
             )}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRestoreDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setRestoreDialogOpen(false)} disabled={isRestoring}>
               Cancel
             </Button>
             <Button
