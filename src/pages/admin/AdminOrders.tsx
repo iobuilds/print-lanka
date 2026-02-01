@@ -30,6 +30,7 @@ interface OrderItem {
   infill_percentage: number;
   price: number | null;
   notes: string | null;
+  weight_grams: number | null;
 }
 
 interface PaymentSlip {
@@ -99,6 +100,7 @@ export default function AdminOrders() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [pricingOrder, setPricingOrder] = useState<Order | null>(null);
   const [itemPrices, setItemPrices] = useState<Record<string, number>>({});
+  const [itemWeights, setItemWeights] = useState<Record<string, number>>({});
   const [deliveryCharge, setDeliveryCharge] = useState<number>(350);
   const [isSavingPrices, setIsSavingPrices] = useState(false);
   const [viewingSlip, setViewingSlip] = useState<string | null>(null);
@@ -181,19 +183,38 @@ export default function AdminOrders() {
     }
   };
 
-  // Calculate suggested price for an order item based on config
-  const calculateSuggestedPrice = (item: OrderItem): number => {
+  // Calculate suggested price for an order item based on config and weight
+  const calculateSuggestedPrice = (item: OrderItem, weightGrams?: number): number => {
     const qualityKey = item.quality as keyof typeof pricingConfig.quality_pricing;
     const materialKey = item.material as keyof typeof pricingConfig.material_surcharge;
     
     const basePrice = pricingConfig.quality_pricing[qualityKey] || 20;
     const materialSurcharge = pricingConfig.material_surcharge[materialKey] || 0;
     
-    // Calculate based on infill and quantity
+    // If weight is provided, calculate based on weight
+    const weight = weightGrams || item.weight_grams || 0;
+    if (weight > 0) {
+      const pricePerGram = basePrice + materialSurcharge;
+      return Math.round(pricePerGram * weight * item.quantity);
+    }
+    
+    // Fallback: calculate based on infill and quantity (old method)
     const infillMultiplier = 1 + (item.infill_percentage / 100);
     const pricePerUnit = (basePrice + materialSurcharge) * infillMultiplier;
     
-    return Math.round(pricePerUnit * item.quantity * 100); // LKR, assuming base is per gram and avg model is ~100g
+    return Math.round(pricePerUnit * item.quantity * 100); // Assuming avg model ~100g
+  };
+
+  // Calculate price from weight for a single item
+  const calculatePriceFromWeight = (itemId: string, weightGrams: number) => {
+    if (!pricingOrder) return;
+    
+    const item = pricingOrder.order_items.find(i => i.id === itemId);
+    if (!item) return;
+    
+    const price = calculateSuggestedPrice(item, weightGrams);
+    setItemPrices(prev => ({ ...prev, [itemId]: price }));
+    setItemWeights(prev => ({ ...prev, [itemId]: weightGrams }));
   };
 
   // Auto-calculate all prices for an order
@@ -225,7 +246,8 @@ export default function AdminOrders() {
             quality,
             infill_percentage,
             price,
-            notes
+            notes,
+            weight_grams
           ),
           payment_slips (
             id,
@@ -470,10 +492,13 @@ export default function AdminOrders() {
   const openPricingDialog = (order: Order) => {
     setPricingOrder(order);
     const prices: Record<string, number> = {};
+    const weights: Record<string, number> = {};
     order.order_items.forEach(item => {
       prices[item.id] = item.price || 0;
+      weights[item.id] = item.weight_grams || 0;
     });
     setItemPrices(prices);
+    setItemWeights(weights);
     setDeliveryCharge(order.delivery_charge || 350);
   };
 
@@ -524,10 +549,12 @@ export default function AdminOrders() {
 
     setIsSavingPrices(true);
     try {
+      // Save both price and weight for each item
       for (const [itemId, price] of Object.entries(itemPrices)) {
+        const weight = itemWeights[itemId] || null;
         const { error } = await supabase
           .from("order_items")
-          .update({ price })
+          .update({ price, weight_grams: weight })
           .eq("id", itemId);
 
         if (error) throw error;
@@ -1051,148 +1078,197 @@ export default function AdminOrders() {
 
       {/* Pricing Dialog */}
       <Dialog open={!!pricingOrder} onOpenChange={() => setPricingOrder(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Set Order Prices</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              Order #{pricingOrder?.id.slice(0, 8)} • {pricingOrder?.profile?.first_name} {pricingOrder?.profile?.last_name}
+            </DialogDescription>
           </DialogHeader>
           
           {pricingOrder && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-muted-foreground">
-                  Order #{pricingOrder.id.slice(0, 8)} • {pricingOrder.profile?.first_name} {pricingOrder.profile?.last_name}
-                </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={autoCalculatePrices}
-                  className="gap-2"
-                >
-                  <Calculator className="w-4 h-4" />
-                  Auto-Calculate
-                </Button>
-              </div>
+            <>
+              <ScrollArea className="flex-1 pr-4 -mr-4">
+                <div className="space-y-4 pb-4">
+                  <div className="flex items-center justify-end">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={autoCalculatePrices}
+                      className="gap-2"
+                    >
+                      <Calculator className="w-4 h-4" />
+                      Auto-Calculate All
+                    </Button>
+                  </div>
 
-              <div className="space-y-3">
-                {pricingOrder.order_items.map((item) => {
-                  const suggestedPrice = calculateSuggestedPrice(item);
-                  return (
-                    <div key={item.id} className="flex items-center gap-4 p-3 border rounded-lg">
-                      <div
-                        className="w-6 h-6 rounded-full border flex-shrink-0"
-                        style={{ backgroundColor: item.color }}
+                  <div className="space-y-3">
+                    {pricingOrder.order_items.map((item) => {
+                      const currentWeight = itemWeights[item.id] || 0;
+                      const suggestedPrice = calculateSuggestedPrice(item, currentWeight > 0 ? currentWeight : undefined);
+                      const qualityKey = item.quality as keyof typeof pricingConfig.quality_pricing;
+                      const materialKey = item.material as keyof typeof pricingConfig.material_surcharge;
+                      const ratePerGram = pricingConfig.quality_pricing[qualityKey] + pricingConfig.material_surcharge[materialKey];
+                      
+                      return (
+                        <div key={item.id} className="p-3 border rounded-lg space-y-3">
+                          <div className="flex items-start gap-3">
+                            <div
+                              className="w-6 h-6 rounded-full border flex-shrink-0 mt-1"
+                              style={{ backgroundColor: item.color }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{item.file_name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {item.material.toUpperCase()} • {item.quality} • {item.infill_percentage}% • ×{item.quantity}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Rate: {formatPrice(ratePerGram)}/gram
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Weight (grams)</Label>
+                              <div className="flex gap-2 mt-1">
+                                <Input
+                                  type="number"
+                                  placeholder="Enter weight"
+                                  value={itemWeights[item.id] || ""}
+                                  onChange={(e) => {
+                                    const weight = Number(e.target.value);
+                                    setItemWeights(prev => ({ ...prev, [item.id]: weight }));
+                                  }}
+                                  className="flex-1"
+                                />
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => {
+                                    const weight = itemWeights[item.id] || 0;
+                                    if (weight > 0) {
+                                      calculatePriceFromWeight(item.id, weight);
+                                      toast.success(`Calculated: ${formatPrice(calculateSuggestedPrice(item, weight))}`);
+                                    } else {
+                                      toast.error("Enter weight first");
+                                    }
+                                  }}
+                                  className="gap-1"
+                                >
+                                  <Calculator className="w-3 h-3" />
+                                  Calc
+                                </Button>
+                              </div>
+                            </div>
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Price (LKR)</Label>
+                              <Input
+                                type="number"
+                                placeholder="Enter price"
+                                value={itemPrices[item.id] || ""}
+                                onChange={(e) => 
+                                  setItemPrices({ ...itemPrices, [item.id]: Number(e.target.value) })
+                                }
+                                className="mt-1"
+                              />
+                              {currentWeight > 0 && (
+                                <p className="text-xs text-primary mt-1">
+                                  Suggested: {formatPrice(suggestedPrice)}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center gap-4 p-3 border rounded-lg bg-muted/50">
+                    <Truck className="w-4 h-4 text-muted-foreground" />
+                    <div className="flex-1">
+                      <Label>Delivery Charge</Label>
+                    </div>
+                    <div className="w-32">
+                      <Input
+                        type="number"
+                        value={deliveryCharge}
+                        onChange={(e) => setDeliveryCharge(Number(e.target.value))}
                       />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{item.file_name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {item.material.toUpperCase()} • {item.quality} • {item.infill_percentage}% • ×{item.quantity}
-                        </p>
-                        <p className="text-xs text-primary mt-1">
-                          Suggested: {formatPrice(suggestedPrice)}
-                        </p>
-                      </div>
-                      <div className="w-32">
-                        <Input
-                          type="number"
-                          placeholder="Price (LKR)"
-                          value={itemPrices[item.id] || ""}
-                          onChange={(e) => 
-                            setItemPrices({ ...itemPrices, [item.id]: Number(e.target.value) })
-                          }
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="flex items-center gap-4 p-3 border rounded-lg bg-muted/50">
-                <div className="flex-1">
-                  <Label>Delivery Charge</Label>
-                </div>
-                <div className="w-32">
-                  <Input
-                    type="number"
-                    value={deliveryCharge}
-                    onChange={(e) => setDeliveryCharge(Number(e.target.value))}
-                  />
-                </div>
-              </div>
-
-              {/* Price Summary - Always show full breakdown */}
-              {(() => {
-                const couponInfo = getAppliedCouponInfo(pricingOrder);
-                const itemsTotal = Object.values(itemPrices).reduce((sum, p) => sum + (p || 0), 0);
-                const subtotal = itemsTotal + deliveryCharge;
-                const discountAmount = calculateDiscount(subtotal, couponInfo);
-                const customerPays = Math.max(0, subtotal - discountAmount);
-                
-                return (
-                  <div className="space-y-3 p-4 bg-slate-100 dark:bg-slate-800 rounded-lg border-2 border-slate-200 dark:border-slate-700">
-                    {/* Items Total */}
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-muted-foreground">Items Total</span>
-                      <span className="font-medium">{formatPrice(itemsTotal)}</span>
-                    </div>
-
-                    {/* Delivery */}
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-muted-foreground">Delivery Charge</span>
-                      <span className="font-medium">{formatPrice(deliveryCharge)}</span>
-                    </div>
-
-                    {/* Subtotal */}
-                    <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-300 dark:border-slate-600">
-                      <span className="font-medium">Subtotal</span>
-                      <span className="font-semibold">{formatPrice(subtotal)}</span>
-                    </div>
-
-                    {/* Coupon Discount - show if coupon applied */}
-                    {couponInfo && (
-                      <div className="flex justify-between items-center p-3 bg-green-100 dark:bg-green-900/50 rounded-lg border border-green-300 dark:border-green-700">
-                        <span className="flex items-center gap-2 text-green-700 dark:text-green-300 font-medium">
-                          <Tag className="w-4 h-4" />
-                          <span>Coupon: {couponInfo.code}</span>
-                          <Badge className="bg-green-600 text-white text-xs">
-                            {couponInfo.discount_type === "percentage" 
-                              ? `${couponInfo.discount_value}% OFF` 
-                              : formatPrice(couponInfo.discount_value) + " OFF"}
-                          </Badge>
-                        </span>
-                        <span className="font-bold text-lg text-green-700 dark:text-green-300">
-                          -{formatPrice(discountAmount)}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Customer Pays */}
-                    <div className="flex justify-between items-center p-4 bg-primary/20 rounded-lg border-2 border-primary/30 mt-2">
-                      <span className="font-bold text-lg">
-                        {couponInfo ? "🎉 Customer Pays" : "Total"}
-                      </span>
-                      <span className="text-3xl font-bold text-primary">
-                        {formatPrice(customerPays)}
-                      </span>
                     </div>
                   </div>
-                );
-              })()}
-            </div>
-          )}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPricingOrder(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSavePrices} disabled={isSavingPrices}>
-              {isSavingPrices ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4 mr-2" />
-              )}
-              Save & Notify Customer
-            </Button>
-          </DialogFooter>
+                  {/* Price Summary */}
+                  {(() => {
+                    const couponInfo = getAppliedCouponInfo(pricingOrder);
+                    const itemsTotal = Object.values(itemPrices).reduce((sum, p) => sum + (p || 0), 0);
+                    const subtotal = itemsTotal + deliveryCharge;
+                    const discountAmount = calculateDiscount(subtotal, couponInfo);
+                    const customerPays = Math.max(0, subtotal - discountAmount);
+                    
+                    return (
+                      <div className="space-y-3 p-4 bg-slate-100 dark:bg-slate-800 rounded-lg border-2 border-slate-200 dark:border-slate-700">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-muted-foreground">Items Total</span>
+                          <span className="font-medium">{formatPrice(itemsTotal)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-muted-foreground">Delivery Charge</span>
+                          <span className="font-medium">{formatPrice(deliveryCharge)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-300 dark:border-slate-600">
+                          <span className="font-medium">Subtotal</span>
+                          <span className="font-semibold">{formatPrice(subtotal)}</span>
+                        </div>
+
+                        {couponInfo && (
+                          <div className="flex justify-between items-center p-3 bg-green-100 dark:bg-green-900/50 rounded-lg border border-green-300 dark:border-green-700">
+                            <span className="flex items-center gap-2 text-green-700 dark:text-green-300 font-medium">
+                              <Tag className="w-4 h-4" />
+                              <span>Coupon: {couponInfo.code}</span>
+                              <Badge className="bg-green-600 text-white text-xs">
+                                {couponInfo.discount_type === "percentage" 
+                                  ? `${couponInfo.discount_value}% OFF` 
+                                  : formatPrice(couponInfo.discount_value) + " OFF"}
+                              </Badge>
+                            </span>
+                            <span className="font-bold text-lg text-green-700 dark:text-green-300">
+                              -{formatPrice(discountAmount)}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="flex justify-between items-center p-4 bg-primary/20 rounded-lg border-2 border-primary/30 mt-2">
+                          <span className="font-bold text-lg">
+                            {couponInfo ? "🎉 Customer Pays" : "Total"}
+                          </span>
+                          <span className="text-3xl font-bold text-primary">
+                            {formatPrice(customerPays)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </ScrollArea>
+
+              <DialogFooter className="flex-shrink-0 border-t pt-4 mt-4 bg-background">
+                <Button variant="outline" onClick={() => setPricingOrder(null)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSavePrices} disabled={isSavingPrices}>
+                  {isSavingPrices ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4 mr-2" />
+                  )}
+                  Save & Notify Customer
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

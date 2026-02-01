@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { useAuth } from "@/contexts/AuthContext";
@@ -11,15 +11,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   User, Package, Tag, Clock, CheckCircle, XCircle, 
   Truck, Printer, CreditCard, Edit2, Save, Loader2,
-  Calendar, Percent, ChevronRight, Upload, FileImage, X, AlertCircle, Building2, ShoppingBag
+  Calendar, Percent, ChevronRight, Upload, FileImage, X, AlertCircle, Building2, ShoppingBag, Download, FileText
 } from "lucide-react";
 import { formatPrice, ORDER_STATUSES } from "@/lib/constants";
 import { toast } from "sonner";
 import { BankDetailsDialog } from "@/components/BankDetailsDialog";
 import { UserShopOrders } from "@/components/dashboard/UserShopOrders";
+import { Invoice } from "@/components/Invoice";
 
 interface OrderItem {
   id: string;
@@ -28,7 +30,9 @@ interface OrderItem {
   color: string;
   material: string;
   quality: string;
+  infill_percentage?: number;
   price: number | null;
+  weight_grams?: number | null;
 }
 
 interface PaymentSlip {
@@ -49,6 +53,7 @@ interface Order {
   total_price: number | null;
   delivery_charge: number | null;
   created_at: string;
+  paid_at?: string | null;
   notes: string | null;
   tracking_number: string | null;
   order_items: OrderItem[];
@@ -125,6 +130,8 @@ export default function Dashboard() {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [showBankDetails, setShowBankDetails] = useState(false);
   const [adminPhone, setAdminPhone] = useState("0717367497");
+  const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
+  const invoiceRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -173,6 +180,7 @@ export default function Dashboard() {
         total_price,
         delivery_charge,
         created_at,
+        paid_at,
         notes,
         tracking_number,
         order_items (
@@ -182,7 +190,9 @@ export default function Dashboard() {
           color,
           material,
           quality,
-          price
+          infill_percentage,
+          price,
+          weight_grams
         ),
         payment_slips (
           id,
@@ -460,6 +470,41 @@ export default function Dashboard() {
     ) && order.total_price;
   };
 
+  const handlePrintInvoice = () => {
+    if (!invoiceRef.current) return;
+    
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error("Please allow popups to print invoice");
+      return;
+    }
+    
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Invoice - IO Builds</title>
+          <style>
+            @media print {
+              body { margin: 0; padding: 20px; }
+              @page { size: A4; margin: 10mm; }
+            }
+            body { font-family: Arial, sans-serif; }
+          </style>
+        </head>
+        <body>
+          ${invoiceRef.current.innerHTML}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    
+    // Wait for images to load
+    setTimeout(() => {
+      printWindow.print();
+    }, 500);
+  };
+
   if (authLoading) {
     return (
       <Layout>
@@ -725,6 +770,20 @@ export default function Dashboard() {
                                           <p className="text-base font-mono">{order.tracking_number}</p>
                                         </div>
                                       </div>
+                                    </div>
+                                  )}
+                                  {/* Invoice Download Button */}
+                                  {order.total_price != null && (
+                                    <div className="pt-3 border-t flex justify-end">
+                                      <Button 
+                                        variant="outline" 
+                                        size="sm"
+                                        onClick={() => setInvoiceOrder(order)}
+                                        className="gap-2"
+                                      >
+                                        <FileText className="w-4 h-4" />
+                                        View Invoice
+                                      </Button>
                                     </div>
                                   )}
                                 </div>
@@ -1035,6 +1094,48 @@ export default function Dashboard() {
       </Dialog>
       
       <BankDetailsDialog open={showBankDetails} onOpenChange={setShowBankDetails} />
+      
+      {/* Invoice Dialog */}
+      <Dialog open={!!invoiceOrder} onOpenChange={() => setInvoiceOrder(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+          <DialogHeader className="px-6 pt-6">
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              Invoice
+            </DialogTitle>
+          </DialogHeader>
+          
+          {invoiceOrder && (
+            <>
+              <ScrollArea className="max-h-[65vh] px-6">
+                <Invoice
+                  ref={invoiceRef}
+                  orderId={invoiceOrder.id}
+                  orderItems={invoiceOrder.order_items}
+                  totalPrice={invoiceOrder.total_price || 0}
+                  deliveryCharge={invoiceOrder.delivery_charge || 0}
+                  createdAt={invoiceOrder.created_at}
+                  paidAt={invoiceOrder.paid_at}
+                  trackingNumber={invoiceOrder.tracking_number}
+                  profile={profile}
+                  appliedCoupon={invoiceOrder.applied_coupon}
+                  status={invoiceOrder.status}
+                />
+              </ScrollArea>
+              
+              <DialogFooter className="px-6 pb-6 border-t pt-4">
+                <Button variant="outline" onClick={() => setInvoiceOrder(null)}>
+                  Close
+                </Button>
+                <Button onClick={handlePrintInvoice} className="gap-2">
+                  <Download className="w-4 h-4" />
+                  Print / Download PDF
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }
